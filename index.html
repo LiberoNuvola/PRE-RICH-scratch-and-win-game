@@ -1,0 +1,1566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-eval' 'unsafe-inline' data: https://cdn.jsdelivr.net https://deno.land https://unpkg.com; connect-src 'self' https://cardano-preprod.blockfrost.io https://api.charli3.io https://cdn.jsdelivr.net; img-src 'self' data:; style-src 'self' 'unsafe-inline';">
+  <title>PreRich Scratch Game</title>
+  <link rel="icon" type="image/png" href="assets/pre-rich.png">
+  <style>
+    .container {
+      margin-left: 60px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      padding: 20px;
+    }
+    @media (max-width: 768px) {
+      .container {
+        margin-left: 50px;
+      }
+    }
+    .sidebar {
+      position: fixed;
+      left: 0;
+      top: 0;
+      height: 100%;
+      width: 60px;
+      background: #333;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 20px;
+      transition: width 0.3s;
+      z-index: 1000;
+      overflow-y: auto;
+    }
+    .sidebar:hover {
+      width: 200px;
+    }
+    .sidebar button,
+    .sidebar span {
+      width: 100%;
+      padding: 10px;
+      color: white;
+      background: none;
+      border: none;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1em;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .sidebar button:hover {
+      background: #555;
+    }
+    .sidebar .icon {
+      width: 24px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+    .sidebar .label {
+      display: none;
+    }
+    .sidebar:hover .label {
+      display: inline;
+    }
+    @media (max-width: 768px) {
+      .sidebar {
+        width: 50px;
+      }
+      .sidebar:hover {
+        width: 150px;
+      }
+    }
+    .header {
+      width: 100%;
+      text-align: center;
+    }
+    .divider {
+      width: 2px;
+      background: #333;
+      margin: 0 5px;
+      height: 400px;
+      align-self: center;
+    }
+    .column-label {
+      text-align: center;
+      font-weight: bold;
+      margin-bottom: 5px;
+      font-size: 1.2em;
+      color: #333;
+    }
+    .scratch-box {
+      position: relative;
+      width: 120px;
+      height: 120px;
+      border: 1px solid #ccc;
+    }
+    .scratch-box .symbol {
+      background-color: #fffbe7;
+      border-radius: 10px;
+      box-shadow: 0 0 8px #ffd70055;
+      width: 100%;
+      height: 100%;
+      background-size: contain;
+      background-repeat: no-repeat;
+      background-position: center;
+      transform: scale(0.7);
+      position: absolute;
+      z-index: 1;
+    }
+    .scratch-pad {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+      z-index: 2;
+    }
+    .ticket-selection {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    .ticket-selection div {
+      margin-top: 10px;
+    }
+    .ticket-chooser {
+      margin: 10px 0;
+    }
+    .balance-display {
+      margin: 20px auto;
+      width: fit-content;
+      font-size: 20px;
+      color: #fff;
+      background: #333;
+      padding: 12px 20px;
+      border-radius: 8px;
+      text-align: center;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+      position: relative;
+      z-index: 1;
+    }
+    .balance-display span {
+      margin: 0 10px;
+    }
+    .balance-img {
+      width: 16px;
+      height: 16px;
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+    .notification {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #333;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 5px;
+      z-index: 1000;
+      display: none;
+    }
+    #loading-spinner {
+      display: none;
+      margin-left: 10px;
+      font-size: 0.9em;
+      color: #666;
+    }
+    .demo-ticket {
+      position: relative;
+      width: 1500px;
+      height: 500px;
+      margin: 20px auto;
+    }
+    .demo-ticket img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 10px;
+    }
+    .demo-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.7);
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 5px;
+      font-size: 1.2em;
+    }
+    .scratch-ticket {
+      position: relative;
+      width: 1500px;
+      height: 500px;
+      margin: 20px auto;
+      padding: 20px;
+      background-size: 100% 100%;
+      background-position: center;
+      border-radius: 10px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    }
+    .ticket-content {
+      display: flex;
+      flex-direction: row;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      height: 100%;
+      padding-right: 20px;
+    }
+    .legend {
+      text-align: left;
+      font-size: 1em;
+      color: #333;
+      max-width: 150px;
+      background: #f5f5f5;
+      padding: 10px;
+      border-radius: 5px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      order: 1;
+      margin-right: 10px;
+    }
+    .scratch-columns {
+      display: flex;
+      flex-direction: row;
+      gap: 10px;
+      order: 2;
+      align-items: center;
+    }
+    @media (max-width: 768px) {
+      .scratch-ticket {
+        width: 750px;
+        height: 250px;
+      }
+      .demo-ticket {
+        width: 750px;
+        height: 250px;
+      }
+      .ticket-content {
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 15px;
+        padding-right: 0;
+      }
+      .scratch-columns {
+        flex-direction: row;
+        gap: 5px;
+      }
+      .scratch-box {
+        width: 80px;
+        height: 80px;
+      }
+      .divider {
+        height: 200px;
+      }
+    }
+    footer {
+      margin-top: 20px;
+      text-align: center;
+      font-size: 0.9em;
+      color: #666;
+    }
+    footer a {
+      color: #333;
+      text-decoration: none;
+    }
+    footer a:hover {
+      text-decoration: underline;
+    }
+    .buy-tickets-btn:disabled {
+      background: #999;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <button id="connect-wallet" onclick="connectWallet()">
+      <img src="assets/wallet-icon.png" class="icon" alt="Wallet Icon">
+      <span class="label">Connect Wallet</span>
+    </button>
+    <button id="change-wallet" onclick="changeWallet()" style="display: none;">
+      <img src="assets/switch-icon.png" class="icon" alt="Switch Icon">
+      <span class="label">Change Wallet</span>
+    </button>
+    <button id="disconnect-wallet" onclick="disconnectWallet()" style="display: none;">
+      <img src="assets/disconnect-icon.png" class="icon" alt="Disconnect Icon">
+      <span class="label">Disconnect Wallet</span>
+    </button>
+    <span id="loading-spinner" style="display: none;">
+      <img src="assets/loading-icon.png" class="icon" alt="Loading Icon">
+      <span class="label">Connecting...</span>
+    </span>
+    <button onclick="selectTicket(2)">
+      <img src="assets/ticket-icon.png" class="icon" alt="Ticket Icon">
+      <span class="label">2 USDM Ticket</span>
+    </button>
+    <button onclick="selectTicket(5)">
+      <img src="assets/ticket-icon.png" class="icon" alt="Ticket Icon">
+      <span class="label">5 USDM Ticket</span>
+    </button>
+    <button id="buy-tickets-btn" class="buy-tickets-btn" onclick="buyTickets()" disabled>
+      <img src="assets/buy-icon.png" class="icon" alt="Buy Icon">
+      <span class="label">Buy Tickets</span>
+    </button>
+    <button onclick="playSelectedTicket()">
+      <img src="assets/play-icon.png" class="icon" alt="Play Icon">
+      <span class="label">Play Selected Ticket</span>
+    </button>
+    <button onclick="toggleBackgroundMusic()">
+      <img src="assets/music-icon.png" class="icon" alt="Music Icon">
+      <span class="label">Toggle Music</span>
+    </button>
+    <button onclick="goHome()">
+      <img src="assets/home-icon.png" class="icon" alt="Home Icon">
+      <span class="label">Home</span>
+    </button>
+    <button id="claim-prize" onclick="claimPrize()" style="display: none;">
+      <img src="assets/prize-icon.png" class="icon" alt="Prize Icon">
+      <span class="label">Claim Prize</span>
+    </button>
+  </div>
+  <div class="container">
+    <div class="header">
+      <h1>PreRich Scratch Game</h1>
+    </div>
+    <div class="balance-display" id="wallet-balance">Balance: Not connected</div>
+    <div class="ticket-selection">
+      <div>
+        <label for="num-tickets">Number of Tickets:</label>
+        <input type="number" id="num-tickets" min="1" max="10" value="1">
+      </div>
+      <div>
+        <label for="payment-method">Pay with:</label>
+        <select id="payment-method">
+          <option value="ADA">ADA</option>
+          <option value="PRE">PRE-RICH</option>
+        </select>
+      </div>
+      <span id="selected-ticket">No ticket selected</span>
+    </div>
+    <div class="ticket-chooser">
+      <label for="ticket-select">Select Ticket:</label>
+      <select id="ticket-select" disabled>
+        <option value="-1">No tickets available</option>
+      </select>
+    </div>
+    <div class="notification" id="game-result"></div>
+    <div class="scratch-ticket">
+      <div class="demo-ticket" id="demo-ticket">
+        <img src="assets/ticket1.jpg" alt="Demo Ticket">
+        <div class="demo-overlay">Demo Ticket</div>
+      </div>
+      <div class="ticket-content" style="display: none;">
+        <div class="legend">
+          <h2>Prizes</h2>
+          <p>3× <img src="assets/stella.png" alt="star" style="width:24px;vertical-align:middle;"> = 2 USDM</p>
+          <p>3× <img src="assets/cuore.png" alt="heart" style="width:24px;vertical-align:middle;"> = 5 USDM</p>
+          <p>3× <img src="assets/quadrif.png" alt="clover" style="width:24px;vertical-align:middle;"> = 10 USDM</p>
+          <p>3× <img src="assets/alloro.png" alt="laurel" style="width:24px;vertical-align:middle;"> = 200 USDM</p>
+          <p>3× <img src="assets/coppa.png" alt="trophy" style="width:24px;vertical-align:middle;"> = 1000 USDM</p>
+        </div>
+        <div class="scratch-columns">
+          <div class="scratch-column">
+            <div class="column-label">1</div>
+            <div class="scratch-box">
+              <div class="symbol" id="symbol1"></div>
+              <canvas class="scratch-pad" id="scratch1" width="120" height="120"></canvas>
+            </div>
+            <div class="scratch-box">
+              <div class="symbol" id="symbol2"></div>
+              <canvas class="scratch-pad" id="scratch2" width="120" height="120"></canvas>
+            </div>
+            <div class="scratch-box">
+              <div class="symbol" id="symbol3"></div>
+              <canvas class="scratch-pad" id="scratch3" width="120" height="120"></canvas>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="scratch-column">
+            <div class="column-label">2</div>
+            <div class="scratch-box">
+              <div class="symbol" id="symbol4"></div>
+              <canvas class="scratch-pad" id="scratch4" width="120" height="120"></canvas>
+            </div>
+            <div class="scratch-box">
+              <div class="symbol" id="symbol5"></div>
+              <canvas class="scratch-pad" id="scratch5" width="120" height="120"></canvas>
+            </div>
+            <div class="scratch-box">
+              <div class="symbol" id="symbol6"></div>
+              <canvas class="scratch-pad" id="scratch6" width="120" height="120"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="winning-tickets">
+      <h2>Winning Tickets</h2>
+      <table id="winning-tickets-table">
+        <thead>
+          <tr>
+            <th>Ticket ID</th>
+            <th>Prize</th>
+            <th>Ticket Price</th>
+            <th>Wallet Address</th>
+          </tr>
+        </thead>
+        <tbody id="winning-tickets-body"></tbody>
+      </table>
+    </div>
+    <div id="result-animation"></div>
+    <audio id="background-music" loop aria-label="Background music" src=""></audio>
+    <audio id="scratch-sound" aria-label="Scratch sound" src=""></audio>
+    <audio id="jackpot-sound" aria-label="Jackpot sound" src=""></audio>
+    <audio id="maxwin-sound" aria-label="Max win sound" src=""></audio>
+    <audio id="win5-sound" aria-label="Win 5 sound" src=""></audio>
+    <audio id="win2-sound" aria-label="Win 2 sound" src=""></audio>
+    <footer>
+      Audio: Pixabay (CC0). Icons: <a href="https://icons8.com" target="_blank" rel="noopener noreferrer">Icons8</a>. Developed by Libero Nuvola.
+    </footer>
+  </div>
+
+  <script type="module">
+    import { Lucid, Blockfrost, Data } from 'https://cdn.jsdelivr.net/npm/lucid-cardano@0.10.11/web/mod.js';
+    window.Lucid = { Lucid, Blockfrost, Data };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/cbor-js@0.1.0/cbor.js"></script>
+  <script>
+    console.log('Initial window.cardano check:', !!window.cardano);
+
+    let walletApi = null;
+    let walletAddress = null;
+    let lucid = null;
+
+    const RECIPIENT_ADDRESS = 'addr_test1qpsd5v0jln37h5g7pl2w6j7fhczu2cs4245welp0cn7xajjuy72qvweu0f5nckwtugmlnhfte2kv2a958fdxf9rt53nsdgmheq';
+    const BLOCKFROST_PROJECT_ID = 'preprodotBrn1HQ65Gm40eWlWYc4SLZ3Kc2qt0J';
+    const PRE_ASSET_ID = '1b29fda97d0fd321398c5b7b3285fdaadd519a0d00293285311f02c5052452d52494348';
+    const SCRATCH_LOGO_SRC = 'assets/pre-rich.png';
+    const USDM_TO_PRE_RATE = 1;
+    const ORACLE_ADDRESS = 'addr_test1wzn5ee2qaqvly3hx7e0nk3vhm240n5muq3plhjcnvx9ppjgf62u6a';
+    const ORACLE_POLICY_ID = '1116903479e7320b8e4592207aaebf627898267fcd80e2d9646cbf07';
+    const ORACLE_TOKEN_NAME = '4f7261636c6546656564'; // OracleFeed
+
+    let ticketPrice = null;
+    let isScratching = false;
+    let scratchedCanvases = new Set();
+    let lastPrize = 0;
+    let lastTxHash = null;
+    let currentTicketIndex = -1;
+
+    const symbols = [
+      { name: 'star', src: 'assets/stella.png', prize: 2 },
+      { name: 'heart', src: 'assets/cuore.png', prize: 5 },
+      { name: 'clover', src: 'assets/quadrif.png', prize: 10 },
+      { name: 'laurel', src: 'assets/alloro.png', prize: 200 },
+      { name: 'trophy', src: 'assets/coppa.png', prize: 1000 },
+      { name: 'lightning', src: 'assets/fulmine.png', prize: 0 },
+      { name: 'banana', src: 'assets/banana.png', prize: 0 },
+      { name: 'house', src: 'assets/casa.png', prize: 0 },
+    ];
+
+    const prizeProbabilities = [
+      { name: 'star', prize: 2, probability: 0.10 },
+      { name: 'heart', prize: 5, probability: 0.025 },
+      { name: 'clover', prize: 10, probability: 0.01 },
+      { name: 'laurel', prize: 200, probability: 0.001 },
+      { name: 'trophy', prize: 1000, probability: 0.0001 }
+    ];
+
+    const backgrounds = [
+      'assets/ticket1.jpg',
+      'assets/ticket2.jpg',
+      'assets/ticket3.jpg',
+    ];
+
+    const audioFiles = {
+      background: 'assets/sottofondo.mp3',
+      scratch: 'assets/grattacart.mp3',
+      jackpot: 'assets/jackpot.mp3',
+      maxwin: 'assets/maxwin.mp3',
+      win5: 'assets/win5.mp3',
+      win2: 'assets/win2.mp3',
+    };
+
+    async function fetchExchangeRate() {
+      const cachedRate = localStorage.getItem('usdmToAdaRate');
+      const cacheTime = localStorage.getItem('usdmToAdaRateTime');
+      const now = Date.now();
+      if (cachedRate && cacheTime && now - cacheTime < 1800000) { // Cache di 30 minuti, in linea con la freschezza del feed
+        return parseFloat(cachedRate);
+      }
+      try {
+        // Inizializza Lucid se non è già inizializzato
+        if (!lucid) {
+          lucid = await window.Lucid.Lucid.new(
+            new window.Lucid.Blockfrost('https://cardano-preprod.blockfrost.io/api/v0', BLOCKFROST_PROJECT_ID),
+            'Preprod'
+          );
+        }
+
+        // Leggi gli UTXO dall'indirizzo oracle
+        const utxos = await lucid.utxosAt(ORACLE_ADDRESS);
+        if (utxos.length === 0) {
+          throw new Error('Nessun UTXO trovato all\'indirizzo oracle');
+        }
+
+        // Filtra per l'UTXO con il token OracleFeed
+        const feedUtxo = utxos.find(utxo => utxo.assets[`${ORACLE_POLICY_ID}${ORACLE_TOKEN_NAME}`] > 0);
+        if (!feedUtxo) {
+          throw new Error('Nessun UTXO trovato con il token OracleFeed');
+        }
+
+        // Leggi il datum
+        const datum = feedUtxo.datum;
+        if (!datum) {
+          throw new Error('Nessun datum trovato nell\'UTXO');
+        }
+
+        console.log('Datum raw:', datum);
+
+        // Decodifica il datum come oggetto o integer puro
+        let decodedDatum;
+        let priceInCents;
+        try {
+          // Prova come array di oggetti Charli3 (standard feed multiplo)
+          decodedDatum = window.Lucid.Data.from(datum, window.Lucid.Data.Array(window.Lucid.Data.Object({
+            value: window.Lucid.Data.Integer(),
+            decimals: window.Lucid.Data.Integer()
+          })));
+          console.log('Decoded datum (array of objects):', decodedDatum);
+          if (decodedDatum.length && typeof decodedDatum[0].value !== 'undefined') {
+            priceInCents = Number(decodedDatum[0].value);
+          } else {
+            throw new Error('Array datum vuoto o malformato');
+          }
+        } catch (e) {
+          try {
+            // Prova come array di integer (Charli3 legacy)
+            decodedDatum = window.Lucid.Data.from(datum, window.Lucid.Data.Array(window.Lucid.Data.Integer()));
+            console.log('Decoded datum (array of integers):', decodedDatum);
+            if (Array.isArray(decodedDatum) && decodedDatum.length > 0) {
+              priceInCents = Number(decodedDatum[0]);
+            } else {
+              throw new Error('Array datum vuoto');
+            }
+          } catch (e2) {
+            try {
+              // Fallback: prova come oggetto singolo
+              decodedDatum = window.Lucid.Data.from(datum, window.Lucid.Data.Object({
+                value: window.Lucid.Data.Integer(),
+                decimals: window.Lucid.Data.Integer()
+              }));
+              console.log('Decoded datum (object):', decodedDatum);
+              priceInCents = Number(decodedDatum.value);
+            } catch (err) {
+              try {
+                // Fallback: prova come integer puro
+                decodedDatum = window.Lucid.Data.from(datum, window.Lucid.Data.Integer());
+                console.log('Decoded datum as integer:', decodedDatum);
+                priceInCents = Number(decodedDatum);
+              } catch (err2) {
+                try {
+                  // Fallback: decodifica CBOR manualmente
+                  let datumHex = datum.startsWith('0x') ? datum.slice(2) : datum;
+                  let bytes = [];
+                  for (let i = 0; i < datumHex.length; i += 2) {
+                    bytes.push(parseInt(datumHex.substr(i, 2), 16));
+                  }
+                  let decoded = CBOR.decode(new Uint8Array(bytes).buffer);
+                  console.log('Decoded datum (manual CBOR):', decoded, JSON.stringify(decoded));
+
+                  // Usa la funzione ricorsiva per trovare il primo numero
+                  let foundNumber = findFirstNumber(decoded);
+                  if (typeof foundNumber === 'number' && !isNaN(foundNumber)) {
+                    priceInCents = Number(foundNumber);
+                  } else {
+                    throw new Error('CBOR decoded but no number found');
+                  }
+                } catch (err3) {
+                  console.error('Tutti i tentativi di decodifica falliti. Datum:', datum);
+                  throw new Error('Could not decode datum as array, object, integer or CBOR');
+                }
+              }
+            }
+          }
+        }
+
+        if (isNaN(priceInCents) || priceInCents <= 0) {
+          throw new Error('Prezzo non valido nel datum');
+        }
+        const rate = priceInCents / 1_000_000; // ADA per 1 USDM
+        localStorage.setItem('usdmToAdaRate', rate);
+        localStorage.setItem('usdmToAdaRateTime', now);
+        console.log('Tasso ADA/USD recuperato dall\'oracle Charli3:', rate);
+        console.log('Prezzo trovato nel datum:', priceInCents);
+        return rate;
+      } catch (error) {
+        console.error('Errore nel recupero del tasso di cambio:', error);
+        return 2; // Tasso di fallback
+      }
+    }
+
+    const symbolManager = (function () {
+      let ticketSymbols = [];
+      return {
+        generateForTicket: function () {
+          let winType = null;
+          let rand = Math.random();
+          let cumulative = 0;
+          for (const prize of prizeProbabilities) {
+            cumulative += prize.probability;
+            if (rand < cumulative) {
+              winType = prize.name;
+              break;
+            }
+          }
+          const symbolsList = [];
+          if (winType) {
+            const winColumn = Math.random() < 0.5 ? [0,1,2] : [3,4,5];
+            for (let i = 0; i < 6; i++) {
+              if (winColumn.includes(i)) {
+                symbolsList[i] = symbols.find(s => s.name === winType);
+              } else {
+                let losingSymbols = symbols.filter(s => s.name !== winType);
+                symbolsList[i] = losingSymbols[Math.floor(Math.random() * losingSymbols.length)];
+              }
+            }
+          } else {
+            let used = {};
+            for (let col = 0; col < 2; col++) {
+              let colSymbols = [];
+              while (true) {
+                colSymbols = [];
+                for (let i = 0; i < 3; i++) {
+                  colSymbols.push(symbols[Math.floor(Math.random() * symbols.length)]);
+                }
+                if (!(colSymbols[0].name === colSymbols[1].name && colSymbols[1].name === colSymbols[2].name)) break;
+              }
+              for (let i = 0; i < 3; i++) {
+                symbolsList[col*3 + i] = colSymbols[i];
+              }
+            }
+          }
+          ticketSymbols.push(symbolsList);
+          console.log('Symbols generated for ticket (not accessible): [hidden]');
+          return ticketSymbols.length - 1;
+        },
+        getSymbol: function (ticketIndex, symbolIndex) {
+          return ticketSymbols[ticketIndex][symbolIndex];
+        },
+        getAll: function (ticketIndex) {
+          return [...ticketSymbols[ticketIndex]];
+        },
+        clear: function () {
+          ticketSymbols = [];
+          console.log('Ticket symbols cleared');
+        }
+      };
+    })();
+
+    const ticketManager = (function () {
+      let tickets = [];
+      return {
+        addTicket: function (txHash, symbols, background, policyID, assetName) {
+          tickets.push({ txHash, symbols, background, policyID, assetName, played: false });
+          console.log(`Ticket added: ${txHash}, policyID: ${policyID}, assetName: ${assetName}, background: ${background}`);
+        },
+        getTickets: function () {
+          return [...tickets];
+        },
+        getTicket: function (index) {
+          return tickets[index];
+        },
+        clearTickets: function () {
+          tickets = [];
+          console.log('Tickets cleared');
+        },
+        removeTicket: function (index) {
+          tickets.splice(index, 1);
+          console.log(`Ticket ${index} removed`);
+        }
+      };
+    })();
+
+    function showNotification(message, type = "info") {
+      const notification = document.getElementById('game-result');
+      notification.textContent = message;
+      notification.style.display = 'block';
+      notification.style.fontSize = '2em';
+      notification.style.fontWeight = 'bold';
+      notification.style.transition = 'all 0.3s';
+
+      if (type === "win") {
+        notification.style.background = '#28a745';
+        notification.style.color = '#fff';
+        notification.style.boxShadow = '0 0 20px #28a745';
+      } else if (type === "lose") {
+        notification.style.background = '#dc3545';
+        notification.style.color = '#fff';
+        notification.style.boxShadow = '0 0 20px #dc3545';
+      } else {
+        notification.style.background = '#333';
+        notification.style.color = '#fff';
+        notification.style.boxShadow = 'none';
+      }
+
+      setTimeout(() => {
+        notification.style.display = 'none';
+        notification.style.fontSize = '';
+        notification.style.fontWeight = '';
+        notification.style.background = '';
+        notification.style.color = '';
+        notification.style.boxShadow = '';
+      }, 5000);
+    }
+
+    function getScratchedPercentage(canvas) {
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      let transparentPixels = 0;
+      for (let i = 3; i < imageData.length; i += 4) {
+        if (imageData[i] === 0) transparentPixels++;
+      }
+      return (transparentPixels / (canvas.width * canvas.height)) * 100;
+    }
+
+    function setupScratchCanvas(canvasId, ticketIndex) {
+      console.log(`Initializing canvas: ${canvasId}, ticket: ${ticketIndex}`);
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) {
+        console.error(`Canvas ${canvasId} not found.`);
+        return;
+      }
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      const scratchSound = document.getElementById('scratch-sound');
+      const index = parseInt(canvasId.replace('scratch', '')) - 1;
+
+      const logoImage = new Image();
+      logoImage.src = SCRATCH_LOGO_SRC;
+      logoImage.onload = () => {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.drawImage(logoImage, 0, 0, canvas.width, canvas.height);
+        ctx.globalCompositeOperation = 'destination-out';
+        console.log(`Logo applied to ${canvasId}`);
+      };
+      logoImage.onerror = () => {
+        console.error(`Error loading image: ${SCRATCH_LOGO_SRC}`);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = '#888';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.globalCompositeOperation = 'destination-out';
+      };
+
+      ctx.lineWidth = 20;
+      ctx.lineCap = 'round';
+
+      let isDrawing = false;
+
+      function getMousePos(event) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+          x: event.clientX - rect.left,
+          y: event.clientY - rect.top
+        };
+      }
+
+      function getTouchPos(event) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+          x: event.touches[0].clientX - rect.left,
+          y: event.touches[0].clientY - rect.top
+        };
+      }
+
+      function startScratching(event) {
+        isDrawing = true;
+        isScratching = true;
+        console.log(`Start scratching: ${canvasId}`);
+        scratchSound.play().catch(e => console.error('Audio error:', e));
+        const pos = event.type.includes('touch') ? getTouchPos(event) : getMousePos(event);
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+        event.preventDefault();
+        scratchedCanvases.add(canvasId);
+        const symbol = symbolManager.getSymbol(ticketIndex, index);
+        const symbolElement = document.getElementById(`symbol${index + 1}`);
+        if (!symbolElement) {
+          console.error(`Element symbol${index + 1} not found.`);
+          return;
+        }
+        symbolElement.style.backgroundImage = `url(${symbol.src})`;
+        console.log(`Symbol revealed for ${canvasId}: ${symbol.name}`);
+        checkGameResult();
+      }
+
+      function scratch(event) {
+        if (!isDrawing) return;
+        const pos = event.type.includes('touch') ? getTouchPos(event) : getMousePos(event);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
+        console.log(`Scratching: x=${pos.x}, y=${pos.y}`);
+        event.preventDefault();
+      }
+
+      function stopScratching() {
+        isDrawing = false;
+        scratchSound.pause();
+        scratchSound.currentTime = 0;
+        ctx.beginPath();
+        console.log(`Stop scratching: ${canvasId}`);
+      }
+
+      canvas.addEventListener('mousedown', startScratching);
+      canvas.addEventListener('mousemove', scratch);
+      canvas.addEventListener('mouseup', stopScratching);
+      canvas.addEventListener('mouseleave', stopScratching);
+      canvas.addEventListener('touchstart', startScratching);
+      canvas.addEventListener('touchmove', scratch);
+      canvas.addEventListener('touchend', stopScratching);
+    }
+
+    function checkGameResult() {
+      if (scratchedCanvases.size < 6) return;
+
+      let allScratchedEnough = true;
+      for (let i = 1; i <= 6; i++) {
+        const canvas = document.getElementById(`scratch${i}`);
+        const percentage = getScratchedPercentage(canvas);
+        console.log(`Canvas ${i}: ${percentage}% scratched`);
+        if (percentage < 60) {
+          allScratchedEnough = false;
+        }
+      }
+
+      const symbolsList = symbolManager.getAll(currentTicketIndex);
+      const column1 = symbolsList.slice(0, 3);
+      const column2 = symbolsList.slice(3, 6);
+
+      const checkColumnWin = (column) => {
+        if (column.every(symbol => symbol.name === column[0].name)) {
+          return column[0].prize;
+        }
+        return 0;
+      };
+
+      const prize1 = checkColumnWin(column1);
+      const prize2 = checkColumnWin(column2);
+      const totalPrize = prize1 + prize2;
+
+      setTimeout(() => {
+        if (totalPrize > 0) {
+          showNotification(`Congratulations! You won ${totalPrize} USDM!`, "win");
+          const audio = totalPrize >= 1000 ? document.getElementById('maxwin-sound') :
+                       totalPrize >= 200 ? document.getElementById('jackpot-sound') :
+                       totalPrize >= 5 ? document.getElementById('win5-sound') :
+                       document.getElementById('win2-sound');
+          audio.play().catch(e => console.error('Audio error:', e));
+          lastPrize = totalPrize;
+          document.getElementById('claim-prize').style.display = 'block';
+        } else {
+          showNotification('No win, try again!', "lose");
+        }
+        if (!allScratchedEnough) {
+          console.log('Not all canvases scratched enough (60% threshold), but showing result');
+        }
+      }, 2000);
+    }
+
+    window.claimPrize = async function claimPrize() {
+      try {
+        if (lastPrize === 0) {
+          showNotification('No prize to claim!');
+          return;
+        }
+
+        if (!window.Lucid || !window.Lucid.Data) {
+          throw new Error('Lucid Data module not loaded');
+        }
+
+        const paymentMethod = document.getElementById('payment-method').value;
+        let prizeAsset, prizeAmount;
+
+        if (paymentMethod === 'ADA') {
+          const usdmToAdaRate = await fetchExchangeRate();
+          prizeAmount = BigInt(Math.round(lastPrize * usdmToAdaRate * 1_000_000));
+          prizeAsset = { lovelace: prizeAmount };
+          console.log(`Prize: ${lastPrize} USDM, Rate: ${usdmToAdaRate} ADA/USDM, Total: ${prizeAmount} lovelace`);
+        } else if (paymentMethod === 'PRE') {
+          prizeAmount = BigInt(Math.round(lastPrize * USDM_TO_PRE_RATE));
+          if (!/^[0-9a-fA-F]+$/.test(PRE_ASSET_ID)) {
+            throw new Error('Invalid PRE_ASSET_ID format');
+          }
+          prizeAsset = { [PRE_ASSET_ID]: prizeAmount };
+          console.log(`Prize: ${lastPrize} USDM, Rate: ${USDM_TO_PRE_RATE} PRE/USDM, Total: ${prizeAmount} PRE`);
+        } else {
+          throw new Error('Invalid prize payment method');
+        }
+
+        const utxos = await lucid.utxosAt(RECIPIENT_ADDRESS);
+        console.log('UTXOs:', utxos);
+        console.log('PRE_ASSET_ID:', PRE_ASSET_ID);
+        if (utxos.length === 0) {
+          throw new Error('No UTXOs found at script address');
+        }
+
+        const validUtxo = utxos.find(utxo => utxo.assets.lovelace >= 2_000_000);
+        if (!validUtxo) {
+          throw new Error('No valid UTXO with sufficient lovelace');
+        }
+
+        const tx = await lucid
+          .newTx()
+          .collectFrom([validUtxo], window.Lucid.Data.void())
+          .payToAddress(walletAddress, prizeAsset)
+          .addSigner(await lucid.wallet.address())
+          .complete();
+
+        const signedTx = await tx.sign().complete();
+        const txHash = await signedTx.submit();
+        console.log(`Prize claimed: ${lastPrize} USDM (paid in ${paymentMethod}), txHash: ${txHash}`);
+
+        const winningTicketsBody = document.getElementById('winning-tickets-body');
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${lastTxHash || 'N/A'}</td>
+          <td>${lastPrize} USDM (in ${paymentMethod})</td>
+          <td>${ticketPrice} USDM</td>
+          <td>${walletAddress ? walletAddress.slice(0, 10) + '...' : 'N/A'}</td>
+        `;
+        winningTicketsBody.appendChild(row);
+
+        showNotification(`Prize of ${lastPrize} USDM (paid in ${paymentMethod}) claimed successfully!`);
+        document.getElementById('claim-prize').style.display = 'none';
+        lastPrize = 0;
+      } catch (error) {
+        console.error('Error in claimPrize:', error);
+        showNotification(`Error claiming prize: ${error.message}`);
+      }
+    }
+
+    async function initializeLucid() {
+      try {
+        if (!window.Lucid || !window.Lucid.Lucid || !window.Lucid.Blockfrost) {
+          throw new Error('Lucid or Blockfrost library not loaded.');
+        }
+        lucid = await window.Lucid.Lucid.new(
+          new window.Lucid.Blockfrost('https://cardano-preprod.blockfrost.io/api/v0', BLOCKFROST_PROJECT_ID),
+          'Preprod'
+        );
+        console.log('Lucid initialized');
+      } catch (error) {
+        console.error('Error initializing Lucid:', error);
+        throw error;
+      }
+    }
+
+    window.connectWallet = async function connectWallet() {
+      const loadingSpinner = document.getElementById('loading-spinner');
+      const balanceElement = document.getElementById('wallet-balance');
+      balanceElement.textContent = 'Balance: Connecting...';
+      if (loadingSpinner) loadingSpinner.style.display = 'inline-block';
+
+      try {
+        if (!window.cardano) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          if (!window.cardano) {
+            throw new Error('Wallet extension not found.');
+          }
+        }
+
+        const supportedWallets = ['lace', 'nami', 'eternl', 'yoroi'];
+        const availableWallets = supportedWallets.filter(wallet => window.cardano[wallet]);
+        if (availableWallets.length === 0) {
+          throw new Error('No supported wallet found (Lace, Nami, Eternl, Yoroi).');
+        }
+
+        let selectedWallet;
+        if (availableWallets.length > 1) {
+          const walletChoice = prompt(
+            `Available wallets: ${availableWallets.join(', ')}. Enter wallet name (e.g., lace, nami, eternl, yoroi):`
+          );
+          if (!walletChoice || !availableWallets.includes(walletChoice.toLowerCase())) {
+            throw new Error('Invalid wallet selected.');
+          }
+          selectedWallet = walletChoice.toLowerCase();
+        } else {
+          selectedWallet = availableWallets[0];
+        }
+
+        console.log(`Attempting to connect to ${selectedWallet}`);
+
+        if (window.cardano[selectedWallet].disable) {
+          try {
+            await window.cardano[selectedWallet].disable();
+            console.log(`Previous ${selectedWallet} session disconnected`);
+          } catch (e) {
+            console.warn(`Failed to disconnect previous ${selectedWallet} session:`, e);
+          }
+        }
+
+        walletApi = await window.cardano[selectedWallet].enable();
+        await initializeLucid();
+        lucid.selectWallet(walletApi);
+
+        const addresses = await walletApi.getUsedAddresses();
+        if (addresses.length === 0) {
+          throw new Error('No addresses found.');
+        }
+        walletAddress = await lucid.wallet.address();
+
+        const utxos = await lucid.wallet.getUtxos();
+        console.log('UTXOs:', utxos);
+        let adaBalance = 0;
+        let preBalance = 0;
+        utxos.forEach(utxo => {
+          adaBalance += Number(utxo.assets.lovelace) / 1_000_000;
+          if (utxo.assets[PRE_ASSET_ID]) preBalance += Number(utxo.assets[PRE_ASSET_ID]);
+        });
+
+        balanceElement.innerHTML = `Balance: <span>₳ ${adaBalance.toFixed(2)} ADA</span> | <span><img src="${SCRATCH_LOGO_SRC}" class="balance-img">${preBalance} PRE-RICH</span>`;
+        document.getElementById('connect-wallet').style.display = 'none';
+        document.getElementById('change-wallet').style.display = 'inline-block';
+        document.getElementById('disconnect-wallet').style.display = 'inline-block';
+        console.log(`${selectedWallet} wallet connected: ${walletAddress}`);
+        showNotification(`Connected to ${selectedWallet} wallet successfully!`);
+      } catch (error) {
+        console.error('Error connecting wallet:', error);
+        balanceElement.textContent = `Balance: Connection failed - ${error.message}`;
+        showNotification(`Error connecting wallet: ${error.message}`);
+      } finally {
+        if (loadingSpinner) loadingSpinner.style.display = 'none';
+      }
+    }
+
+    window.changeWallet = async function changeWallet() {
+      const loadingSpinner = document.getElementById('loading-spinner');
+      const balanceElement = document.getElementById('wallet-balance');
+      balanceElement.textContent = 'Balance: Connecting...';
+      if (loadingSpinner) loadingSpinner.style.display = 'inline-block';
+
+      try {
+        if (!window.cardano) {
+          throw new Error('Wallet extension not found.');
+        }
+        const availableWallets = [];
+        for (const wallet in window.cardano) {
+          if (window.cardano[wallet].enable) {
+            availableWallets.push(wallet);
+          }
+        }
+        if (availableWallets.length === 0) {
+          throw new Error('No wallets found.');
+        }
+        const walletChoice = prompt(`Available wallets: ${availableWallets.join(', ')}. Enter wallet name (e.g., lace, nami):`);
+        if (!walletChoice || !window.cardano[walletChoice]) {
+          throw new Error('Invalid wallet selected.');
+        }
+
+        if (window.cardano[walletChoice].disable) {
+          try {
+            await window.cardano[walletChoice].disable();
+            console.log(`Previous ${walletChoice} session disconnected`);
+          } catch (e) {
+            console.warn(`Failed to disconnect previous ${walletChoice} session:`, e);
+          }
+        }
+
+        walletApi = await window.cardano[walletChoice].enable();
+        await initializeLucid();
+        lucid.selectWallet(walletApi);
+
+        const addresses = await walletApi.getUsedAddresses();
+        if (addresses.length === 0) {
+          throw new Error('No addresses found.');
+        }
+        walletAddress = await lucid.wallet.address();
+
+        const utxos = await lucid.wallet.getUtxos();
+        console.log('UTXOs:', utxos);
+        let adaBalance = 0;
+        let preBalance = 0;
+        utxos.forEach(utxo => {
+          adaBalance += Number(utxo.assets.lovelace) / 1_000_000;
+          if (utxo.assets[PRE_ASSET_ID]) preBalance += Number(utxo.assets[PRE_ASSET_ID]);
+        });
+
+        balanceElement.innerHTML = `Balance: <span>₳ ${adaBalance.toFixed(2)} ADA</span> | <span><img src="${SCRATCH_LOGO_SRC}" class="balance-img">${preBalance} PRE-RICH</span>`;
+        document.getElementById('connect-wallet').style.display = 'none';
+        document.getElementById('change-wallet').style.display = 'inline-block';
+        document.getElementById('disconnect-wallet').style.display = 'inline-block';
+        console.log(`Wallet changed to ${walletChoice}: ${walletAddress}`);
+        showNotification(`Changed to ${walletChoice} wallet successfully!`);
+      } catch (error) {
+        console.error('Error changing wallet:', error);
+        balanceElement.textContent = `Balance: Connection failed - ${error.message}`;
+        showNotification(`Error changing wallet: ${error.message}`);
+      } finally {
+        if (loadingSpinner) loadingSpinner.style.display = 'none';
+      }
+    }
+
+    window.disconnectWallet = async function disconnectWallet() {
+      try {
+        if (walletApi && walletApi.disable) {
+          await walletApi.disable();
+          console.log('Wallet API disabled');
+        }
+        walletApi = null;
+        walletAddress = null;
+        lucid = null;
+        document.getElementById('wallet-balance').textContent = 'Balance: Wallet disconnected';
+        document.getElementById('connect-wallet').style.display = 'inline-block';
+        document.getElementById('change-wallet').style.display = 'none';
+        document.getElementById('disconnect-wallet'). style.display = 'none';
+        console.log('Wallet disconnected');
+        showNotification('Wallet disconnected successfully!');
+      } catch (error) {
+        console.error('Error disconnecting wallet:', error);
+        showNotification(`Error disconnecting wallet: ${error.message}`);
+      }
+    }
+
+    async function getPolicyID() {
+      try {
+        if (!lucid || !lucid.utils) {
+          throw new Error('Lucid instance or utils not initialized.');
+        }
+        if (!walletAddress) {
+          throw new Error('Wallet not connected.');
+        }
+        const paymentCredential = lucid.utils.getAddressDetails(walletAddress).paymentCredential;
+        if (!paymentCredential || !paymentCredential.hash) {
+          throw new Error('Unable to retrieve payment credential hash.');
+        }
+        const mintingScript = lucid.utils.nativeScriptFromJson({
+          type: "sig",
+          keyHash: paymentCredential.hash
+        });
+        const policyID = lucid.utils.mintingPolicyToId(mintingScript);
+        console.log(`Generated policyID: ${policyID}`);
+        return { policyID, mintingScript };
+      } catch (error) {
+        console.error('Error generating policyID:', error);
+        throw error;
+      }
+    }
+
+    async function verifyNFTOwnership(policyID, assetName) {
+      try {
+        if (!lucid || !walletAddress) {
+          throw new Error('Wallet not connected.');
+        }
+        const utxos = await lucid.wallet.getUtxos();
+        const assetID = policyID + assetName;
+        const hasNFT = utxos.some(utxo => utxo.assets[assetID] && Number(utxo.assets[assetID]) > 0);
+        console.log(`NFT ${assetID} ownership check: ${hasNFT}`);
+        return hasNFT;
+      } catch (error) {
+        console.error('Error verifying NFT ownership:', error);
+        throw error;
+      }
+    }
+
+    function stringToHex(str) {
+      let hex = '';
+      for (let i = 0; i < str.length; i++) {
+        hex += str.charCodeAt(i).toString(16).padStart(2, '0');
+      }
+      return hex;
+    }
+
+    async function purchaseTicket(ticketPrice, numTickets, paymentMethod) {
+      if (!walletApi || !walletAddress || !lucid) {
+        throw new Error('Wallet not connected.');
+      }
+      try {
+        if (!lucid || !lucid.utils) {
+          throw new Error('Lucid instance or utils not initialized.');
+        }
+        let amount;
+        let asset;
+        if (paymentMethod === 'ADA') {
+          const usdmToAdaRate = await fetchExchangeRate();
+          amount = BigInt(Math.round(ticketPrice * usdmToAdaRate * 1_000_000)) * BigInt(numTickets);
+          asset = { lovelace: amount };
+          console.log(`Purchasing ${numTickets} tickets: ${ticketPrice} USDM each, Rate: ${usdmToAdaRate} ADA/USDM, Total: ${amount} lovelace`);
+        } else if (paymentMethod === 'PRE') {
+          amount = BigInt(Math.round(ticketPrice * USDM_TO_PRE_RATE)) * BigInt(numTickets);
+          if (!/^[0-9a-fA-F]+$/.test(PRE_ASSET_ID)) {
+            throw new Error('Invalid PRE_ASSET_ID format');
+          }
+          asset = { [PRE_ASSET_ID]: amount };
+          console.log(`Purchasing ${numTickets} tickets: ${ticketPrice} USDM each, Rate: ${USDM_TO_PRE_RATE} PRE/USDM, Total: ${amount} PRE`);
+        } else {
+          throw new Error('Invalid payment method.');
+        }
+
+        const { policyID, mintingScript } = await getPolicyID();
+        if (!mintingScript) {
+          throw new Error('Minting script not generated.');
+        }
+        let tx = lucid.newTx().payToAddress(RECIPIENT_ADDRESS, asset);
+
+        for (let i = 0; i < numTickets; i++) {
+          const rawAssetName = `Ticket_${Date.now()}_${i}`;
+          const assetName = stringToHex(rawAssetName);
+          const ticketIndex = symbolManager.generateForTicket();
+          const symbolsList = symbolManager.getAll(ticketIndex);
+          const randomIndex = Math.floor(Math.random() * backgrounds.length);
+          const background = backgrounds[randomIndex];
+
+          const metadata = {
+            721: {
+              [policyID]: {
+                [rawAssetName]: {
+                  name: `PreRich Scratch Ticket #${i + 1}`,
+                  image: `ipfs://${background.replace('assets/', '')}`,
+                  ticketPrice: `${ticketPrice} USDM`,
+                  background: background,
+                  symbols: symbolsList.map(s => s.name)
+                }
+              }
+            }
+          };
+
+          tx = tx
+            .mintAssets({ [`${policyID}${assetName}`]: BigInt(1) })
+            .attachMintingPolicy(mintingScript)
+            .attachMetadata(721, metadata);
+
+          ticketManager.addTicket(null, ticketIndex, background, policyID, assetName);
+        }
+
+        tx = await tx.complete();
+        const signedTx = await tx.sign().complete();
+        const txHash = await signedTx.submit();
+        lastTxHash = txHash;
+
+        ticketManager.getTickets().forEach(ticket => {
+          if (!ticket.txHash) ticket.txHash = txHash;
+        });
+
+        console.log(`Transaction sent for ${numTickets} NFT tickets with ${paymentMethod}: ${txHash}`);
+        return txHash;
+      } catch (error) {
+        console.error('Error purchasing tickets:', error);
+        throw error;
+      }
+    }
+
+    window.selectTicket = function selectTicket(price) {
+      ticketPrice = price;
+      console.log(`Ticket price selected: ${price} USDM`);
+      document.getElementById('selected-ticket').textContent = `Selected: ${price} USDM Ticket`;
+      document.getElementById('buy-tickets-btn').disabled = false;
+      showNotification(`Ticket selected: ${price} USDM`);
+    }
+
+    window.buyTickets = async function buyTickets() {
+      try {
+        if (!ticketPrice) {
+          throw new Error('Select a ticket price first.');
+        }
+        const numTicketsInput = document.getElementById('num-tickets').value;
+        const numTickets = parseInt(numTicketsInput);
+        if (isNaN(numTickets) || numTickets < 1 || numTickets > 10) {
+          throw new Error('Select a number of tickets between 1 and 10.');
+        }
+        const paymentMethod = document.getElementById('payment-method').value;
+        const totalCost = ticketPrice * numTickets;
+
+        let usdmToAdaRate = 1;
+        if (paymentMethod === 'ADA') {
+          usdmToAdaRate = await fetchExchangeRate();
+          if (!usdmToAdaRate || isNaN(usdmToAdaRate) || usdmToAdaRate <= 0) {
+            showNotification('Unable to fetch the ADA/USDM rate. Please try again later.');
+            return;
+          }
+        }
+
+        let totalInAsset;
+        let confirmMsg = `Do you want to purchase ${numTickets} ticket${numTickets > 1 ? 's' : ''}?\n\n`;
+        confirmMsg += `Unit price: ${ticketPrice} USDM\n`;
+
+        if (paymentMethod === 'ADA') {
+          totalInAsset = Math.round(totalCost * usdmToAdaRate * 1_000_000) / 1_000_000;
+          confirmMsg += `Total: ${totalCost} USDM ≈ ${totalInAsset.toFixed(6)} ADA\n`;
+          confirmMsg += `(Current rate: 1 USDM ≈ ${(usdmToAdaRate).toFixed(6)} ADA)`;
+        } else if (paymentMethod === 'PRE') {
+          totalInAsset = totalCost * USDM_TO_PRE_RATE;
+          confirmMsg += `Total: ${totalCost} USDM ≈ ${totalInAsset.toFixed(2)} PRE-RICH`;
+        }
+
+        // Mostra il messaggio SOLO ora, dopo aver ottenuto il tasso reale e controllato che sia valido
+        const confirmPurchase = confirm(confirmMsg);
+        if (!confirmPurchase) {
+          console.log('Ticket purchase canceled');
+          return;
+        }
+        const txHash = await purchaseTicket(ticketPrice, numTickets, paymentMethod);
+        console.log(`Tickets purchased successfully! Transaction Hash: ${txHash}`);
+        updateTicketSelect();
+        document.getElementById('ticket-select').disabled = false;
+        showNotification(`Purchased ${numTickets} tickets! Select a ticket and click "Play Selected Ticket" to play.`);
+      } catch (error) {
+        console.error('Error during purchase:', error);
+        showNotification(`Error: ${error.message}`);
+      }
+    }
+
+    window.playTicket = async function playTicket(ticketIndex) {
+      try {
+        ticketIndex = parseInt(ticketIndex);
+        if (ticketIndex < 0 || ticketIndex >= ticketManager.getTickets().length) {
+          console.log('No ticket selected or invalid index');
+          return;
+        }
+        const ticket = ticketManager.getTicket(ticketIndex);
+
+        const hasNFT = await verifyNFTOwnership(ticket.policyID, ticket.assetName);
+        if (!hasNFT) {
+          showNotification('You do not own this ticket NFT.');
+          return;
+        }
+
+        scratchedCanvases.clear();
+        const ticketDiv = document.querySelector('.scratch-ticket');
+        if (!ticketDiv) {
+          throw new Error('Element .scratch-ticket not found.');
+        }
+        document.getElementById('demo-ticket').style.display = 'none';
+        document.querySelector('.ticket-content').style.display = 'flex';
+        const bgImage = new Image();
+        bgImage.src = ticket.background;
+        bgImage.onload = () => {
+          ticketDiv.style.backgroundImage = `url(${ticket.background})`;
+          console.log(`Background applied: ${ticket.background}`);
+        };
+        bgImage.onerror = () => {
+          console.error(`Error loading background: ${ticket.background}`);
+          ticketDiv.style.backgroundColor = '#ccc';
+        };
+        console.log(`Loading ticket ${ticketIndex}, background: ${ticket.background}, policyID: ${ticket.policyID}, assetName: ${ticket.assetName}`);
+        for (let i = 1; i <= 6; i++) {
+          const symbolElement = document.getElementById(`symbol${i}`);
+          if (!symbolElement) {
+            console.error(`Element symbol${i} not found.`);
+            continue;
+          }
+          symbolElement.style.backgroundImage = '';
+          const canvas = document.getElementById(`scratch${i}`);
+          if (!canvas) {
+            console.error(`Canvas scratch${i} not found.`);
+            continue;
+          }
+          canvas.width = window.innerWidth <= 768 ? 80 : 120;
+          canvas.height = window.innerWidth <= 768 ? 80 : 120;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          const logoImage = new Image();
+          logoImage.src = SCRATCH_LOGO_SRC;
+          logoImage.onload = () => {
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.drawImage(logoImage, 0, 0, canvas.width, canvas.height);
+            ctx.globalCompositeOperation = 'destination-out';
+            console.log(`Canvas ${i} initialized`);
+          };
+          logoImage.onerror = () => {
+            console.error(`Error loading image: ${SCRATCH_LOGO_SRC}`);
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.fillStyle = '#888';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.globalCompositeOperation = 'destination-out';
+          };
+          setupScratchCanvas(`scratch${i}`, ticketIndex);
+        }
+        currentTicketIndex = ticketIndex;
+      } catch (error) {
+        console.error('Error in playTicket:', error);
+        showNotification(`Error loading ticket: ${error.message}`);
+      }
+    }
+
+    window.playSelectedTicket = function playSelectedTicket() {
+      const select = document.getElementById('ticket-select');
+      const ticketIndex = parseInt(select.value);
+      if (ticketIndex < 0 || ticketIndex >= ticketManager.getTickets().length) {
+        showNotification('Select a valid ticket.');
+        return;
+      }
+      playTicket(ticketIndex);
+      const ticket = ticketManager.getTicket(ticketIndex);
+      ticket.played = true;
+      updateTicketSelect();
+    }
+
+    window.updateTicketSelect = function updateTicketSelect() {
+      const select = document.getElementById('ticket-select');
+      select.innerHTML = '';
+      const tickets = ticketManager.getTickets();
+      const availableTickets = tickets
+        .map((ticket, index) => ({ ...ticket, index }))
+        .filter(ticket => !ticket.played);
+
+      if (availableTickets.length === 0) {
+        select.innerHTML = '<option value="-1">No tickets available</option>';
+        select.disabled = true;
+        document.getElementById('demo-ticket').style.display = 'block';
+        document.querySelector('.ticket-content').style.display = 'none';
+      } else {
+        availableTickets.forEach(ticket => {
+          const option = document.createElement('option');
+          option.value = ticket.index;
+          option.text = `Ticket ${ticket.index + 1} (Tx: ${ticket.txHash ? ticket.txHash.slice(0, 8) : 'Pending'}...)`;
+          select.appendChild(option);
+        });
+        select.disabled = false;
+      }
+    }
+
+    window.goHome = function goHome() {
+      try {
+        document.getElementById('demo-ticket').style.display = 'block';
+        document.querySelector('.ticket-content').style.display = 'none';
+        document.getElementById('selected-ticket').textContent = 'No ticket selected';
+        document.getElementById('wallet-balance').textContent = walletAddress ? document.getElementById('wallet-balance').textContent : 'Balance: Not connected';
+        document.getElementById('claim-prize').style.display = 'none';
+        document.getElementById('buy-tickets-btn').disabled = true;
+
+        for (let i = 1; i <= 6; i++) {
+          const canvas = document.getElementById(`scratch${i}`);
+          if (canvas) {
+            canvas.width = window.innerWidth <= 768 ? 80 : 120;
+            canvas.height = window.innerWidth <= 768 ? 80 : 120;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            const logoImage = new Image();
+            logoImage.src = SCRATCH_LOGO_SRC;
+            logoImage.onload = () => {
+              ctx.globalCompositeOperation = 'source-over';
+              ctx.drawImage(logoImage, 0, 0, canvas.width, canvas.height);
+              ctx.globalCompositeOperation = 'destination-out';
+            };
+            logoImage.onerror = () => {
+              console.error(`Error downloading image: ${SCRATCH_LOGO_SRC}`);
+              ctx.globalCompositeOperation = 'source-over';
+              ctx.fillStyle = '#888';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+              ctx.globalCompositeOperation = 'destination-out';
+            };
+          }
+          const symbolElement = document.getElementById(`symbol${i}`);
+          if (symbolElement) {
+            symbolElement.style.backgroundImage = '';
+          }
+        }
+
+        if (currentTicketIndex !== -1) {
+          ticketManager.removeTicket(currentTicketIndex);
+        }
+        ticketManager.clearTickets();
+        symbolManager.clear();
+        updateTicketSelect();
+        const ticketDiv = document.querySelector('.scratch-ticket');
+        if (ticketDiv) {
+          ticketDiv.style.backgroundImage = '';
+          ticketDiv.style.backgroundColor = '';
+        }
+        scratchedCanvases.clear();
+        lastPrize = 0;
+        currentTicketIndex = -1;
+        ticketPrice = null;
+        console.log('Returned to home screen.');
+      } catch (error) {
+        console.error('Error in goHome:', error);
+        showNotification('Error returning to home screen.');
+      }
+    }
+
+    window.loadAudio = function loadAudio() {
+      try {
+        const backgroundMusic = document.getElementById('background-music');
+        const scratchSound = document.getElementById('scratch-sound');
+        const jackpotSound = document.getElementById('jackpot-sound');
+        const maxwinSound = document.getElementById('maxwin-sound');
+        const win5Sound = document.getElementById('win5-sound');
+        const win2Sound = document.getElementById('win2-sound');
+
+        backgroundMusic.src = audioFiles.background;
+        scratchSound.src = audioFiles.scratch;
+        jackpotSound.src = audioFiles.jackpot;
+        maxwinSound.src = audioFiles.maxwin;
+        win5Sound.src = audioFiles.win5;
+        win2Sound.src = audioFiles.win2;
+
+        const promises = Object.values(audioFiles).map(src => {
+          return new Promise((resolve, reject) => {
+            const audio = new Audio(src);
+            audio.onloadeddata = () => {
+              console.log(`Audio loaded: ${src}`);
+              resolve();
+            };
+            audio.onerror = () => reject(`Unable to load audio: ${src}`);
+          });
+        });
+
+        return Promise.all(promises).then(() => console.log('Audio files loaded'));
+      } catch (error) {
+        console.error('Error in loadAudio:', error);
+        throw error;
+      }
+    }
+
+    window.toggleBackgroundMusic = function toggleBackgroundMusic() {
+      try {
+        const backgroundMusic = document.getElementById('background-music');
+        if (backgroundMusic.paused) {
+          backgroundMusic.play().catch(e => console.error('Error playing background music:', e));
+          console.log('Background music playing');
+        } else {
+          backgroundMusic.pause();
+          console.log('Background music paused');
+        }
+      } catch (error) {
+        console.error('Error in toggleBackgroundMusic:', error);
+        showNotification(`Error toggling music: ${error.message}`);
+      }
+    }
+
+    window.onload = async function () {
+      try {
+        await loadAudio();
+        updateTicketSelect();
+      } catch (error) {
+        console.error('Error during initial setup:', error);
+      }
+    }
+
+    function findFirstNumber(data) {
+      if (typeof data === 'number') return data;
+      if (Array.isArray(data)) {
+        for (let i = 0; i < data.length; i++) {
+          const found = findFirstNumber(data[i]);
+          if (typeof found === 'number' && !isNaN(found)) return found;
+        }
+      }
+      if (typeof data === 'object' && data !== null) {
+        for (const key in data) {
+          if (Object.prototype.hasOwnProperty.call(data, key)) {
+            const found = findFirstNumber(data[key]);
+            if (typeof found === 'number' && !isNaN(found)) return found;
+          }
+        }
+      }
+      return null;
+    }
+  </script>
+</body>
+</html>
