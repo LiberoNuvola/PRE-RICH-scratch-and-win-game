@@ -42,19 +42,18 @@ mkValidator params _ _ ctx =
         Just i  -> valueOf (txOutValue $ txInInfoResolved i) adaSymbol adaToken
         Nothing -> 0
 
-    -- Calcola le quote
-    prizePoolAmt = valueInScript `divide` 2
-    rest         = valueInScript - prizePoolAmt
-    eachShare    = rest `divide` 4
+    -- NUOVA LOGICA DI SUDDIVISIONE OPEN SOURCE:
+    -- 75% al montepremi, 15% buyback, 10% airdrop holders, 0% team
+    prizePoolAmt = valueInScript * 75 `divide` 100
+    buybackAmt   = valueInScript * 15 `divide` 100
+    airdropAmt   = valueInScript * 10 `divide` 100
 
     -- Verifica che ogni destinatario riceva la quota giusta
     correctSplit :: Bool
     correctSplit =
         valuePaidTo info (spPrizePool params) >= prizePoolAmt &&
-        valuePaidTo info (spTeam params)      >= eachShare &&
-        valuePaidTo info (spCosts params)     >= eachShare &&
-        valuePaidTo info (spBuyback params)   >= eachShare &&
-        valuePaidTo info (spStaking params)   >= (rest - 3 * eachShare)
+        valuePaidTo info (spBuyback params)   >= buybackAmt &&
+        valuePaidTo info (spStaking params)   >= airdropAmt
 
 {-# INLINABLE divide #-}
 divide :: Integer -> Integer -> Integer
