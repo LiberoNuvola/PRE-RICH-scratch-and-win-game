@@ -1,5 +1,19 @@
 {
   "dependencies": {
-    "dotenv": "^17.0.0"
+    "dotenv": "^17.0.0",
+    "lucid-cardano": "^0.10.11"
+  }
+  ,
+  "devDependencies": {
+    "vite": "^5.0.0",
+    "typescript": "^5.0.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "relayer": "node relayer/relayer.js",
+    "admin:treasury": "node scripts/admin-treasury.js",
+    "test:predeploy": "node --experimental-strip-types scripts/predeploy-check.mjs"
   }
 }

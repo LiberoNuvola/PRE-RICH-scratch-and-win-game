@@ -1,0 +1,24 @@
+{
+  "network": "Preprod",
+  "version": "1.0.0",
+  "treasury": {
+    "thresholdLovelace": "25000000",
+    "prizePct": 5000,
+    "stakePct": 3000,
+    "reservePct": 1950,
+    "relayerPct": 50,
+    "relayerMinLovelace": "200000"
+  },
+  "addresses": {
+    "prizePool": "",
+    "stakePool": "",
+    "reserve": "",
+    "relayer": "",
+    "admin": ""
+  },
+  "notes": [
+    "Set each address after deployment to the real script or wallet addresses.",
+    "Do not store admin keys in the browser bundle or repository source control.",
+    "The relayer reward is part of the treasury policy and not a privileged bypass."
+  ]
+}

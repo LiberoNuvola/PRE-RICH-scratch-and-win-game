@@ -1,0 +1,515 @@
+<!-- ...existing code... -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://cardano-preprod.blockfrost.io https://api.charli3.io; img-src 'self' data:; style-src 'self' 'unsafe-inline';">
+  <title>PreRich Scratch Game</title>
+  <link rel="icon" type="image/png" href="./assets/pre-rich-DsVj6A7y.png">
+  <style>
+    .container {
+      margin-left: 60px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      padding: 20px;
+    }
+    @media (max-width: 768px) {
+      .container {
+        margin-left: 50px;
+      }
+    }
+    .sidebar {
+      position: fixed;
+      left: 0;
+      top: 0;
+      height: 100%;
+      width: 60px;
+      background: #333;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 20px;
+      transition: width 0.3s;
+      z-index: 1000;
+      overflow-y: auto;
+    }
+    .sidebar:hover {
+      width: 200px;
+    }
+    .sidebar button,
+    .sidebar span {
+      width: 100%;
+      padding: 10px;
+      color: white;
+      background: none;
+      border: none;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1em;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .sidebar button:hover {
+      background: #555;
+    }
+    .sidebar .icon {
+      width: 24px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+    .sidebar .label {
+      display: none;
+    }
+    .sidebar:hover .label {
+      display: inline;
+    }
+    @media (max-width: 768px) {
+      .sidebar {
+        width: 50px;
+      }
+      .sidebar:hover {
+        width: 150px;
+      }
+    }
+    .header {
+      width: 100%;
+      text-align: center;
+    }
+    .divider {
+      width: 2px;
+      background: #333;
+      margin: 0 5px;
+      height: 400px;
+      align-self: center;
+    }
+    .column-label {
+      text-align: center;
+      font-weight: bold;
+      margin-bottom: 5px;
+      font-size: 1.2em;
+      color: #333;
+    }
+    .scratch-box {
+      position: relative;
+      width: 120px;
+      height: 120px;
+      border: 1px solid #ccc;
+    }
+    .scratch-box .symbol {
+      background-color: #fffbe7;
+      border-radius: 10px;
+      box-shadow: 0 0 8px #ffd70055;
+      width: 100%;
+      height: 100%;
+      background-size: contain;
+      background-repeat: no-repeat;
+      background-position: center;
+      transform: scale(0.7);
+      position: absolute;
+      z-index: 1;
+    }
+    .scratch-pad {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+      z-index: 2;
+    }
+    .ticket-selection {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    .ticket-selection div {
+      margin-top: 10px;
+    }
+    .ticket-chooser {
+      margin: 10px 0;
+    }
+    .balance-display {
+      margin: 20px auto;
+      width: fit-content;
+      font-size: 20px;
+      color: #fff;
+      background: #333;
+      padding: 12px 20px;
+      border-radius: 8px;
+      text-align: center;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+      position: relative;
+      z-index: 1;
+    }
+    .balance-display span {
+      margin: 0 10px;
+    }
+    .balance-img {
+      width: 16px;
+      height: 16px;
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+    .notification {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #333;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 5px;
+      z-index: 1000;
+      display: none;
+    }
+    #loading-spinner {
+      display: none;
+      margin-left: 10px;
+      font-size: 0.9em;
+      color: #666;
+    }
+    .demo-ticket {
+      position: relative;
+      width: 1500px;
+      height: 500px;
+      margin: 20px auto;
+    }
+    .demo-ticket img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 10px;
+    }
+    .demo-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.7);
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 5px;
+      font-size: 1.2em;
+    }
+    .scratch-ticket {
+      position: relative;
+      width: 1500px;
+      height: 500px;
+      margin: 20px auto;
+      padding: 20px;
+      background-size: 100% 100%;
+      background-position: center;
+      border-radius: 10px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    }
+    .ticket-content {
+      display: flex;
+      flex-direction: row;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      height: 100%;
+      padding-right: 20px;
+    }
+    .legend {
+      text-align: left;
+      font-size: 1em;
+      color: #333;
+      max-width: 150px;
+      background: #f5f5f5;
+      padding: 10px;
+      border-radius: 5px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      order: 1;
+      margin-right: 10px;
+    }
+    .scratch-columns {
+      display: flex;
+      flex-direction: row;
+      gap: 10px;
+      order: 2;
+      align-items: center;
+    }
+    @media (max-width: 768px) {
+      .scratch-ticket {
+        width: 750px;
+        height: 250px;
+      }
+      .demo-ticket {
+        width: 750px;
+        height: 250px;
+      }
+      .ticket-content {
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 15px;
+        padding-right: 0;
+      }
+      .scratch-columns {
+        flex-direction: row;
+        gap: 5px;
+      }
+      .scratch-box {
+        width: 80px;
+        height: 80px;
+      }
+      .divider {
+        height: 200px;
+      }
+    }
+    footer {
+      margin-top: 20px;
+      text-align: center;
+      font-size: 0.9em;
+      color: #666;
+    }
+    footer a {
+      color: #333;
+      text-decoration: none;
+    }
+    footer a:hover {
+      text-decoration: underline;
+    }
+    .buy-tickets-btn:disabled {
+      background: #999;
+      cursor: not-allowed;
+    }
+    .ad-space {
+      width: 320px;
+      min-height: 180px;
+      background: #fffbe7;
+      border: 2px dashed #ffd700;
+      border-radius: 16px;
+      box-shadow: 0 4px 16px rgba(255,215,0,0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2em;
+      color: #bfa700;
+      font-weight: bold;
+      transition: background 0.2s;
+    }
+    }
+    @media (max-width: 900px) {
+      .ad-space {
+      width: 160px;
+      min-height: 90px;
+      font-size: 1em;
+      }
+      .header {
+        gap: 12px !important;
+      }
+    }
+  </style>
+  <script type="module" crossorigin src="./assets/index-D8-M4b-8.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-DbeMv6gk.css">
+</head>
+<body>
+  <div class="sidebar">
+    <button id="connect-wallet">
+      <img src="./assets/wallet-icon-vYsgX0ob.png" class="icon" alt="Wallet Icon">
+      <span class="label">Connect Wallet</span>
+    </button>
+    <button id="change-wallet" style="display: none;">
+      <img src="./assets/switch-icon-C9FrJLbP.png" class="icon" alt="Switch Icon">
+      <span class="label">Change Wallet</span>
+    </button>
+    <button id="disconnect-wallet" style="display: none;">
+      <img src="./assets/disconnect-icon-D-WCplia.png" class="icon" alt="Disconnect Icon">
+      <span class="label">Disconnect Wallet</span>
+    </button>
+    <span id="loading-spinner" style="display: none;">
+      <img src="./assets/loading-icon-BbMc7yaK.png" class="icon" alt="Loading Icon">
+      <span class="label">Connecting...</span>
+    </span>
+    <button id="ticket-2">
+      <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAABQCAYAAACOEfKtAAAACXBIWXMAAAsTAAALEwEAmpwYAAACNklEQVR4nO3bzWrUUBjG8b/tUhHttnaldSd10w/vSRSLVyDFnbbqJUgLpRQF6w04zBWoN2BdKvQLOtXFyIEnMAxukjdpk5PnB1meZN5nct7JxxwwMzMzMzMzMzMzgzvAHnACjHu6nQD7wGKV8H63oIBxS7aUxXyZAPc08FPZgf8xAL7QTan2A2WxW2ZgMW2j4eVgQVkclRlUnLpWMY86AxxqGnfZlQY46HAPbEWAOXCAQe6BQe6BQZ7CQQ4wyD0wyD0wyFP4qgL8ADwB5uifOeAp8DESYLGdAevATA/uhWeA56p5OodSrgOrwBtgpB1sA7MZ3wvPAjuq9RzYAlaURcgScKgdb5Cvl6rxB/Cg7p0v6Uz8C9wjP/dV23kT4RXe6ht6nWEP3FJtm00eZFUH+ZphD/yu2pabPMgNHeSU/JyptlRjY25OvC/NzellBLhWYQoPO9IDv6m2dNnSmHc6yKsMe+CmakvXvY14CFwAf4C75GdRlzEjXbLVHt5PfUMvyNeGajysI8TUTB9p2l5ox+8r3MoNO9IDUW3bqnWk6961Kj8s0zfR6RfqGXCtwocadKQHTj5MWJ/4VR5HH2c9Bm7RP7dVe8rAD1SD/E4kyO9EgjyFgxxgkHtgkHtgkKdwkAMMcg8Mcg8M8hS+7ACPNSAt+eq7hSoLbfY16KCGEIcdeh44LdX+WVmk5W+l3tL/asEiv3GLFhuW/jfGvBbYFdO5j9uxzrwc/8piZmZmZmZmZmZmlPMP7k/5inYMNnUAAAAASUVORK5CYII=" class="icon" alt="Ticket Icon">
+      <span class="label">2 USDM Ticket</span>
+    </button>
+    <button id="ticket-5">
+      <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAABQCAYAAACOEfKtAAAACXBIWXMAAAsTAAALEwEAmpwYAAACNklEQVR4nO3bzWrUUBjG8b/tUhHttnaldSd10w/vSRSLVyDFnbbqJUgLpRQF6w04zBWoN2BdKvQLOtXFyIEnMAxukjdpk5PnB1meZN5nct7JxxwwMzMzMzMzMzMzgzvAHnACjHu6nQD7wGKV8H63oIBxS7aUxXyZAPc08FPZgf8xAL7QTan2A2WxW2ZgMW2j4eVgQVkclRlUnLpWMY86AxxqGnfZlQY46HAPbEWAOXCAQe6BQe6BQZ7CQQ4wyD0wyD0wyFP4qgL8ADwB5uifOeAp8DESYLGdAevATA/uhWeA56p5OodSrgOrwBtgpB1sA7MZ3wvPAjuq9RzYAlaURcgScKgdb5Cvl6rxB/Cg7p0v6Uz8C9wjP/dV23kT4RXe6ht6nWEP3FJtm00eZFUH+ZphD/yu2pabPMgNHeSU/JyptlRjY25OvC/NzellBLhWYQoPO9IDv6m2dNnSmHc6yKsMe+CmakvXvY14CFwAf4C75GdRlzEjXbLVHt5PfUMvyNeGajysI8TUTB9p2l5ox+8r3MoNO9IDUW3bqnWk6961Kj8s0zfR6RfqGXCtwocadKQHTj5MWJ/4VR5HH2c9Bm7RP7dVe8rAD1SD/E4kyO9EgjyFgxxgkHtgkHtgkKdwkAMMcg8Mcg8M8hS+7ACPNSAt+eq7hSoLbfY16KCGEIcdeh44LdX+WVmk5W+l3tL/asEiv3GLFhuW/jfGvBbYFdO5j9uxzrwc/8piZmZmZmZmZmZmlPMP7k/5inYMNnUAAAAASUVORK5CYII=" class="icon" alt="Ticket Icon">
+      <span class="label">5 USDM Ticket</span>
+    </button>
+    <button id="projects-page-btn">
+      <img src="./assets/home-icon-DlthakBP.png" class="icon" alt="Projects Icon">
+      <span class="label">Cardano Projects</span>
+    </button>
+    <button id="buy-tickets-btn" class="buy-tickets-btn" disabled>
+      <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAACXBIWXMAAAsTAAALEwEAmpwYAAACo0lEQVR4nO2Xz2sTQRTHn6L1UvxxFRXai+BBwUMCiiIKCVJITk2wzaWeDP7AgtiDLSsU897WQtkmMyF/gB5KUQTpzat4EjwJHjVt7xV/oTIymyKZySZxk5mYhf3Auyx5732/M28muwAxMTExw0NxegKK03W4PSPAfSCAkwCGv4DhB2B0HxxnX9iSIj8umgOscqPwCYoF4cedmYYBNZ5G3YAATukhNjB11TchxS/NtzOwNrwGgqg+Oq8YYPQFKs4oDMIAo3MtC1jFM6FqgBB7gNNH1UQpPyAD62pf3Agn/m8h9LRdWLduYPXxmH8DNvetuFd6M8DdC5qBb+A5B60a4LSqjg++86ehJxxnL3DcVFejdK2N4DlddNvIjTuB/VZWDgOnz9r4FKAvGJa1XXjW7qf/ZKKdeAnHOa1XHdacEeiLCl4MM0YdTXQSX6vtb7006B70jRwjRlvatTbVKSXQRCfxEjkq6ujs+CNlBI5MO1jPu6UoJrqJlzB6q63+Mhijipc0A9+hRoe6pYn82EMZXetzvKzt8E+o0QlT8ndvI+2fse/boQlOL7XVfwLGaTXwwkxd9yRw+q3ULrtnjdTubIB+AMcjBurWtLqvjOgNaBTwhorz/nj1Cls6DRy/agYmwArBr9hmg9H7vhbkvxvgeN2O+IEYwG3wvAPRNMCoDqyUsic+yEDk4FE3wHBHMeDRMYgUnN6oc4sbwBaPQ2So0i3rN5FV5JeR/sobKQOSsnvUqomBIHeC401g9LrlAzwSBnY5NTk5kkxl3GQqs5VIZzcT6QzJZ2A51xiyaTKdFc0hn9nONYZcPdk4P7sgcrMLDSGp7LbtXGPIrZeNpYDc3YaIRCpbt51rjOAxyKLtXGPIQyeFNA5h+EOc6DE3JiYmBoaCP4Q0YRLXFHlhAAAAAElFTkSuQmCC" class="icon" alt="Buy Icon">
+      <span class="label">Buy Tickets</span>
+    </button>
+    <button id="play-selected-ticket">
+      <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAACXBIWXMAAAsTAAALEwEAmpwYAAABU0lEQVR4nO2Zv0rEQBCH8x5aqm+wa8DiZPdAEMRCtLSxFqxt7MTKF7CyU8JZWoiFtYWt+ALaGEnC7Cl3647seYfYmb0jm8H5YOr8vtm/SZKEYRimtZiOnActMtCiAi2x2RIVKNkru8uL4eGVyJsPLn+XErlR6Vxtge/ORw6vJxLyMkSgapFAESDQguD6p1gAeAQkT6Fa/NtFPLy7RbOp6Qp43Msz9vf36AqMsBYH52cI3ZSowBj7cI9mZ52ugMcVb/h+eEBXYIRzOLi6QFhbISow5vPpEfu7W3QFPM4Y/Dg9Ji5wckRTgO4UcoQXsaO8jVp/kG1TPMgs4auEo3yZG95co9lYnWl44Jd6Pdtu8gj8hdgdB14DOn7XYapdSIkydmiY6uOukr3owfWkRFZboNRiCZR8jR5eibzopAtJCP7PiP+5EGU6Kf9MkQWHZxiGSZrgC7NyuWwKwqJuAAAAAElFTkSuQmCC" class="icon" alt="Play Icon">
+      <span class="label">Play Selected Ticket</span>
+    </button>
+    <button id="toggle-music">
+      <img src="./assets/music-icon-DwpAfZXv.png" class="icon" alt="Music Icon">
+      <span class="label">Toggle Music</span>
+    </button>
+    <button id="go-home">
+      <img src="./assets/home-icon-DlthakBP.png" class="icon" alt="Home Icon">
+      <span class="label">Home</span>
+    </button>
+    <button id="claim-prize" style="display: none;">
+      <img src="./assets/prize-icon-ZEVsVWCc.png" class="icon" alt="Prize Icon">
+      <span class="label">Claim Prize</span>
+    </button>
+  </div>
+  <div class="container">
+    <div class="header" style="display: flex; align-items: center; justify-content: center; gap: 32px;">
+      <div id="ad-left" class="ad-space">Ad Space<br><span style="font-size:0.9em;font-weight:normal;">You can place banners or ads here</span></div>
+      <h1 style="margin: 0 16px;">PreRich Scratch Game</h1>
+      <div id="ad-right" class="ad-space">Ad Space<br><span style="font-size:0.9em;font-weight:normal;">You can place banners or ads here</span></div>
+    </div>
+    <!-- La sezione progetti Cardano è ora in una pagina dedicata -->
+    <div id="projects-page" style="display:none; width:100%; max-width:900px; margin:0 auto;">
+      <div class="cardano-projects-section" style="background:#f5f5f5; border-radius:10px; padding:20px; margin-bottom:30px; width:100%; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+        <h2 style="margin-top:0;">Create your Scratch Ticket for Cardano Projects</h2>
+        <form id="project-ticket-form" style="display:flex; flex-wrap:wrap; gap:20px; align-items:flex-end;">
+          <div style="flex:1; min-width:180px;">
+            <label>Project Name<br><input type="text" id="project-name" required style="width:100%"></label>
+          </div>
+          <div style="flex:1; min-width:180px;">
+            <label>Policy ID<br><input type="text" id="project-policy-id" required style="width:100%"></label>
+          </div>
+          <div style="flex:1; min-width:180px;">
+            <label>Asset Name<br><input type="text" id="project-asset-name" required style="width:100%"></label>
+          </div>
+          <div style="flex:1; min-width:120px;">
+            <label>Prize Token Amount<br><input type="number" id="project-prize-amount" min="1" required style="width:100%"></label>
+          </div>
+          <div style="flex:1; min-width:180px;">
+            <label>Custom Rules<br><input type="text" id="project-custom-rules" placeholder="(optional)" style="width:100%"></label>
+          </div>
+          <div style="flex:1; min-width:180px;">
+            <label>Ticket Image (.jpg)<br><input type="file" id="project-ticket-image" accept="image/jpeg" required style="width:100%"></label>
+          </div>
+          <button type="submit" style="padding:10px 24px; background:#333; color:#fff; border:none; border-radius:6px; cursor:pointer;">Create Ticket</button>
+        </form>
+        <div id="project-ticket-message" style="margin-top:10px; color:#007700;"></div>
+        <h3 style="margin-top:30px;">Active Projects</h3>
+        <table style="width:100%; border-collapse:collapse; background:#fff;">
+          <thead>
+            <tr style="background:#eee;">
+              <th style="padding:6px; border:1px solid #ddd;">Name</th>
+              <th style="padding:6px; border:1px solid #ddd;">Policy ID</th>
+              <th style="padding:6px; border:1px solid #ddd;">Asset Name</th>
+              <th style="padding:6px; border:1px solid #ddd;">Prize</th>
+              <th style="padding:6px; border:1px solid #ddd;">Rules</th>
+              <th style="padding:6px; border:1px solid #ddd;">Image</th>
+            </tr>
+          </thead>
+          <tbody id="project-tickets-list"></tbody>
+        </table>
+      </div>
+      <button id="back-to-game-btn" onclick="goHome()" style="margin:20px auto; display:block; padding:10px 24px; background:#333; color:#fff; border:none; border-radius:6px; cursor:pointer;">Back to Game</button>
+    </div>
+    <div class="balance-display" id="wallet-balance">Balance: Not connected</div>
+    <div class="ticket-selection">
+      <div>
+        <label for="num-tickets">Number of Tickets:</label>
+        <input type="number" id="num-tickets" min="1" max="10" value="1">
+      </div>
+      <div>
+        <label for="payment-method">Pay with:</label>
+        <select id="payment-method">
+          <option value="ADA">ADA</option>
+          <option value="PRE">PRE-RICH</option>
+        </select>
+      </div>
+      <span id="selected-ticket">No ticket selected</span>
+    </div>
+    <div class="ticket-chooser">
+      <label for="ticket-select">Select Ticket:</label>
+      <select id="ticket-select" disabled>
+        <option value="-1">No tickets available</option>
+      </select>
+    </div>
+    <div class="notification" id="game-result"></div>
+    <div class="scratch-ticket">
+      <div class="demo-ticket" id="demo-ticket">
+        <img src="./assets/ticket1-Bw7kdBqe.jpg" alt="Demo Ticket">
+        <div class="demo-overlay">Demo Ticket</div>
+      </div>
+      <div class="ticket-content" style="display: none;">
+        <div class="legend">
+          <h2>Prizes</h2>
+          <p>3× <img src="./assets/stella-zuyaJFJU.png" alt="star" style="width:24px;vertical-align:middle;"> = 2 USDM</p>
+          <p>3× <img src="./assets/cuore-BjX2gS7f.png" alt="heart" style="width:24px;vertical-align:middle;"> = 5 USDM</p>
+          <p>3× <img src="./assets/quadrif-ZulApkh-.png" alt="clover" style="width:24px;vertical-align:middle;"> = 10 USDM</p>
+          <p>3× <img src="data:image/png;base64,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" alt="laurel" style="width:24px;vertical-align:middle;"> = 200 USDM</p>
+          <p>3× <img src="data:image/png;base64,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" alt="trophy" style="width:24px;vertical-align:middle;"> = 1000 USDM</p>
+        </div>
+        <div class="scratch-columns">
+          <div class="scratch-column">
+            <div class="column-label">1</div>
+            <div class="scratch-box">
+              <div class="symbol" id="symbol1"></div>
+              <canvas class="scratch-pad" id="scratch1" width="120" height="120"></canvas>
+            </div>
+            <div class="scratch-box">
+              <div class="symbol" id="symbol2"></div>
+              <canvas class="scratch-pad" id="scratch2" width="120" height="120"></canvas>
+            </div>
+            <div class="scratch-box">
+              <div class="symbol" id="symbol3"></div>
+              <canvas class="scratch-pad" id="scratch3" width="120" height="120"></canvas>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="scratch-column">
+            <div class="column-label">2</div>
+            <div class="scratch-box">
+              <div class="symbol" id="symbol4"></div>
+              <canvas class="scratch-pad" id="scratch4" width="120" height="120"></canvas>
+            </div>
+            <div class="scratch-box">
+              <div class="symbol" id="symbol5"></div>
+              <canvas class="scratch-pad" id="scratch5" width="120" height="120"></canvas>
+            </div>
+            <div class="scratch-box">
+              <div class="symbol" id="symbol6"></div>
+              <canvas class="scratch-pad" id="scratch6" width="120" height="120"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="winning-tickets">
+      <h2>Winning Tickets</h2>
+      <table id="winning-tickets-table">
+        <thead>
+          <tr>
+            <th>Ticket ID</th>
+            <th>Prize</th>
+            <th>Ticket Price</th>
+            <th>Wallet Address</th>
+          </tr>
+        </thead>
+        <tbody id="winning-tickets-body"></tbody>
+      </table>
+    </div>
+    <div id="result-animation"></div>
+    <audio id="background-music" loop aria-label="Background music" src=""></audio>
+    <audio id="scratch-sound" aria-label="Scratch sound" src=""></audio>
+    <audio id="jackpot-sound" aria-label="Jackpot sound" src=""></audio>
+    <audio id="maxwin-sound" aria-label="Max win sound" src=""></audio>
+    <audio id="win5-sound" aria-label="Win 5 sound" src=""></audio>
+    <audio id="win2-sound" aria-label="Win 2 sound" src=""></audio>
+    <footer>
+      Audio: Pixabay (CC0). Icons: <a href="https://icons8.com" target="_blank" rel="noopener noreferrer">Icons8</a>. Developed by Libero Nuvola.
+    </footer>
+  </div>
+
+  <script src="/assets/lucid.min.js"></script>
+  <script src="/lucid-global.js"></script>
+</body>
+</html>
+

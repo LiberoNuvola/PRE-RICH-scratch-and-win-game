@@ -42,25 +42,58 @@ h1 {
   text-align: center;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+  min-width: 720px;
 }
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.vanilla:hover {
-  filter: drop-shadow(0 0 2em #3178c6aa);
+
+.toolbar {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 .card {
   padding: 2em;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
 }
 
-.read-the-docs {
-  color: #888;
+.slot-packages {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.slot-package {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  text-align: left;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.slot-package__title {
+  font-weight: 700;
+}
+
+.slot-package__meta {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.74);
+}
+
+.slot-status {
+  margin-top: 1rem;
+  font-size: 0.96rem;
+  color: #d5ddff;
 }
 
 button {
@@ -92,5 +125,15 @@ button:focus-visible {
   }
   button {
     background-color: #f9f9f9;
+  }
+  .card {
+    border-color: rgba(0, 0, 0, 0.08);
+    background: rgba(0, 0, 0, 0.015);
+  }
+  .slot-package__meta {
+    color: rgba(33, 53, 71, 0.7);
+  }
+  .slot-status {
+    color: #2947b7;
   }
 }
