@@ -25,3 +25,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+dist-newstyle/
+dist/
+build-wsl.exit
+build-wsl.log
+index_restore_tmp.html
+.env
+.env.*
