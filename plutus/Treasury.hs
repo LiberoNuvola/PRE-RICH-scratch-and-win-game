@@ -49,11 +49,10 @@ pubKeyHashAddress pkh = Address (PubKeyCredential pkh) Nothing
 {-# INLINABLE outputLovelaceToPkh #-}
 outputLovelaceToPkh :: [TxOut] -> PubKeyHash -> Integer
 outputLovelaceToPkh outs pkh =
-  foldr (
-    o acc ->
-      if txOutAddress o == pubKeyHashAddress pkh
-        then acc + valueLovelace (txOutValue o)
-        else acc
+  foldr (\o acc ->
+    if txOutAddress o == pubKeyHashAddress pkh
+      then acc + valueLovelace (txOutValue o)
+      else acc
   ) 0 outs
 
 {-# INLINABLE mkValidator #-}
