@@ -1,3 +1,4 @@
+
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE NoImplicitPrelude   #-}
 {-# LANGUAGE TemplateHaskell     #-}
@@ -63,6 +64,14 @@ mkValidator datum _ ctx =
         hasTicket :: Bool
         hasTicket = any (\txInInfo -> containsTicket (txOutValue $ txInInfoResolved txInInfo)) (txInfoInputs info)
 
+        -- Require the ticket to be burned in this same transaction so it can
+        -- never be reused to claim a second prize UTxO with the same policy/name.
+        ticketBurned :: Bool
+        ticketBurned = let
+            cs = CurrencySymbol (pdTicketPolicy datum)
+            tn = TokenName (pdTicketName datum)
+          in V.valueOf (txInfoMint info) cs tn == negate 1
+
         claimantAddress :: Address
         claimantAddress = claimAddress claimantPkh
 
@@ -94,6 +103,7 @@ mkValidator datum _ ctx =
     in
         traceIfFalse "Missing claimant signature" signedOK &&
         traceIfFalse "Ticket not provided in inputs" hasTicket &&
+        traceIfFalse "Ticket must be burned in the claim tx" ticketBurned &&
         traceIfFalse "Prize not paid to claimant" paysPrize
 
 validator :: Validator
