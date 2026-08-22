@@ -1,3 +1,4 @@
+ì
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE NoImplicitPrelude   #-}
 {-# LANGUAGE TemplateHaskell     #-}
@@ -28,12 +29,34 @@ data PrizePoolAction = Claim Integer | Refill Integer
 PlutusTx.unstableMakeIsData ''PrizePoolAction
 PlutusTx.makeLift ''PrizePoolAction
 
+-- IMPORTANT — randomness requirement:
+-- `seed` here MUST be the value revealed in the commit-reveal flow described in
+-- docs/commit-reveal-design.md, and it MUST itself be derived from entropy that
+-- was not known to anyone (player, dev, relayer) at the time the ticket was
+-- purchased/committed — e.g. combined with a Cardano block hash from a slot
+-- that had not yet been produced at commitment time. `selectedIndex` alone
+-- cannot create randomness; it only derives a bounded index from whatever
+-- entropy `seed` already carries. If `seed` is chosen or influenced by any
+-- single party after they can see the outcome it would produce, the game is
+-- not fair regardless of the hash used below.
 {-# INLINABLE selectedIndex #-}
 selectedIndex :: BuiltinByteString -> Integer -> Integer
 selectedIndex seed poolSize =
   if poolSize <= 0
     then 0
-    else (lengthOfByteString seed) `mod` poolSize
+    else byteStringToInteger (sha2_256 seed) `mod` poolSize
+
+-- Interpret a hash digest as a non-negative Integer by summing byte values
+-- weighted by position. This avoids relying on byte-length (which is
+-- attacker/dev predictable) and instead uses the full digest.
+{-# INLINABLE byteStringToInteger #-}
+byteStringToInteger :: BuiltinByteString -> Integer
+byteStringToInteger bs = go 0 0
+  where
+    len = lengthOfByteString bs
+    go i acc
+      | i >= len  = acc
+      | otherwise = go (i + 1) (acc * 256 + indexByteString bs i)
 
 {-# INLINABLE mkValidator #-}
 mkValidator :: PrizePoolDatum -> PrizePoolAction -> ScriptContext -> Bool
