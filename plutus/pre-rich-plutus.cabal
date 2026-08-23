@@ -14,3 +14,27 @@ library
         plutus-tx-plugin ^>=1.67.0.0
     default-language: Haskell2010
     ghc-options: -Wall
+
+-- Eseguibile che compila i validator e ne esporta il CBOR hex in
+-- plutus/out/*.plutus.json, cosi' che il frontend/relayer possano
+-- allegarli davvero alle transazioni con Lucid (attachSpendingValidator /
+-- attachMintingPolicy). Crea la cartella plutus/out/ prima di eseguirlo:
+--   mkdir -p out
+--   cabal run export-scripts -- <salePkhHex> <priceLovelace>
+executable export-scripts
+    hs-source-dirs:     .
+    main-is:            Export.hs
+    other-modules:       CounterValidator, MintPolicy, PrizePool, PrizeValidator, Treasury
+    build-depends:
+        base ^>=4.18.2,
+        plutus-core ^>=1.67.0.0,
+        plutus-ledger-api ^>=1.67.0.0,
+        plutus-tx ^>=1.67.0.0,
+        plutus-tx-plugin ^>=1.67.0.0,
+        aeson,
+        base16-bytestring,
+        bytestring,
+        serialise,
+        text
+    default-language: Haskell2010
+    ghc-options: -Wall
