@@ -1,92 +1,123 @@
-// Off-chain claim flow helpers using Lucid
-// - Finds the prize UTxO at the script address that actually matches this ticket
-// - Finds a ticket UTxO in the connected wallet
-// - Builds a tx that consumes the prize UTxO, burns the ticket, and pays the
-//   prize to the claimant -- attaching the real Plutus validators so the tx
-//   passes phase-2 validation on a real Cardano node
-// - Signs and submits the tx
-
+// src/claimFlow.ts
 import { prizeValidator, mintPolicyScript } from './loadValidator'
 
-export async function findPrizeUtxo(lucid: any, scriptAddress: string, ticketPolicyId: string, ticketAssetName: string) {
-  const utxos = await lucid.utxosAt(scriptAddress);
-  if (!utxos || utxos.length === 0) return null;
+/**
+ * Trova il prize UTxO il cui datum referenzia esattamente questo ticket.
+ * PrizeDatum (ordine campi da PrizeValidator.hs):
+ *   pdAssetId, pdPrizeAmount, pdTicketPolicy, pdTicketName,
+ *   pdPaymentPolicy, pdPaymentName, pdClaimantPkh
+ *
+ * Nota: l'ordine reale può variare leggermente a seconda di come
+ * Plutus serializza. Qui cerchiamo policy + name del ticket.
+ */
+export async function findPrizeUtxo(
+  lucid: any,
+  scriptAddress: string,
+  ticketPolicyId: string,
+  ticketAssetName: string
+) {
+  const utxos = await lucid.utxosAt(scriptAddress)
+  if (!utxos || utxos.length === 0) return null
 
-  // Match the prize UTxO whose datum actually references this ticket's
-  // policy/name, instead of blindly grabbing the first UTxO at the script
-  // address (which was wrong as soon as more than one prize UTxO exists).
-  // PrizeDatum field order (see plutus/PrizeValidator.hs):
-  //   [ pdPrizeAmount, pdTicketPolicy, pdTicketName, pdPaymentPolicy, pdPaymentName, pdClaimantPkh ]
   for (const u of utxos) {
     try {
-      const datumCbor = u.datum ?? (u.datumHash ? await lucid.datumOf(u) : null)
+      const datumCbor =
+        u.datum ?? (u.datumHash ? await lucid.datumOf(u) : null)
       if (!datumCbor) continue
-      const parsed = lucid.Data.from(typeof datumCbor === 'string' ? datumCbor : lucid.Data.to(datumCbor))
+
+      const parsed = lucid.Data.from(
+        typeof datumCbor === 'string' ? datumCbor : lucid.Data.to(datumCbor)
+      )
+
       const fields = parsed?.fields
       if (!fields || fields.length < 3) continue
-      const datumTicketPolicyHex = fields[1]
-      const datumTicketNameHex = fields[2]
-      if (datumTicketPolicyHex === ticketPolicyId && datumTicketNameHex === ticketAssetName) {
-        return u
+
+      // Tentativo robusto: cerca due campi consecutivi che matchano policy + name
+      for (let i = 0; i < fields.length - 1; i++) {
+        const a = fields[i]
+        const b = fields[i + 1]
+        const policyHex = typeof a === 'string' ? a : a?.bytes ?? a
+        const nameHex = typeof b === 'string' ? b : b?.bytes ?? b
+
+        if (
+          policyHex === ticketPolicyId &&
+          nameHex === ticketAssetName
+        ) {
+          return u
+        }
       }
-    } catch (e) {
-      // datum didn't parse as expected -- skip this UTxO rather than guessing
+    } catch {
       continue
     }
   }
 
-  return null;
+  return null
 }
 
-export async function findTicketUtxoInWallet(lucid: any, ticketPolicyId: string, ticketAssetName: string) {
-  const myUtxos = await lucid.wallet.getUtxos();
-  const assetIdHex = ticketPolicyId + ticketAssetName;
+export async function findTicketUtxoInWallet(
+  lucid: any,
+  ticketPolicyId: string,
+  ticketAssetName: string
+) {
+  const myUtxos = await lucid.wallet.getUtxos()
+  const assetIdHex = ticketPolicyId + ticketAssetName
+
   for (const u of myUtxos) {
     try {
-      const value = u.assets || u.value || {};
-      // value may be an object mapping assetId->amount or a Lucid Value
-      if (typeof value === 'object') {
-        const keys = Object.keys(value);
-        if (keys.includes(assetIdHex)) return u;
+      const value = u.assets || u.value || {}
+      if (typeof value === 'object' && Object.keys(value).includes(assetIdHex)) {
+        return u
       }
-    } catch (e) {
-      // ignore and continue
+    } catch {
+      continue
     }
   }
-  return null;
+  return null
 }
 
-export async function claimPrizeAuto(lucid: any, scriptAddress: string, ticketPolicyId: string, ticketAssetName: string) {
-  const claimantAddr = await lucid.wallet.address();
-  const prizeUtxo = await findPrizeUtxo(lucid, scriptAddress, ticketPolicyId, ticketAssetName);
-  if (!prizeUtxo) throw new Error('No prize UTxO found matching this ticket');
+export async function claimPrizeAuto(
+  lucid: any,
+  scriptAddress: string,
+  ticketPolicyId: string,
+  ticketAssetName: string
+) {
+  const claimantAddr = await lucid.wallet.address()
 
-  const ticketUtxo = await findTicketUtxoInWallet(lucid, ticketPolicyId, ticketAssetName);
-  if (!ticketUtxo) throw new Error('No ticket UTxO found in connected wallet');
-
-  // Derive a value object to pay back to claimant. Prefer tokens in prize UTxO if present, otherwise ADA.
-  let payValue: any = {};
-  if (prizeUtxo.assets && Object.keys(prizeUtxo.assets).length > 0) {
-    payValue = prizeUtxo.assets;
-  } else if (prizeUtxo.value && prizeUtxo.value.lovelace) {
-    payValue = { lovelace: prizeUtxo.value.lovelace };
-  } else if (prizeUtxo.value) {
-    payValue = prizeUtxo.value;
-  } else {
-    payValue = { lovelace: 1000000 };
+  const prizeUtxo = await findPrizeUtxo(
+    lucid,
+    scriptAddress,
+    ticketPolicyId,
+    ticketAssetName
+  )
+  if (!prizeUtxo) {
+    throw new Error('No prize UTxO found matching this ticket')
   }
 
-  const burnAssetId = ticketPolicyId + ticketAssetName;
+  const ticketUtxo = await findTicketUtxoInWallet(
+    lucid,
+    ticketPolicyId,
+    ticketAssetName
+  )
+  if (!ticketUtxo) {
+    throw new Error('No ticket UTxO found in connected wallet')
+  }
 
-  // Build tx:
-  //  - consume prize UTxO (script) -> requires PrizeValidator attached
-  //  - burn the ticket token (mint amount -1) -> requires MintPolicy attached
-  //    as a minting policy; PrizeValidator.hs checks this burn happened in
-  //    the same tx (ticketBurned), and MintPolicy.hs's isPureBurn allows a
-  //    burn-only mint without requiring the full serial-mint conditions.
-  //  - consume the ticket UTxO from the wallet (plain pubkey UTxO, no script needed there)
-  //  - pay prize to claimant
-  const tx = await lucid.newTx()
+  // Valore da pagare al claimant
+  let payValue: any = {}
+  if (prizeUtxo.assets && Object.keys(prizeUtxo.assets).length > 0) {
+    payValue = prizeUtxo.assets
+  } else if (prizeUtxo.value?.lovelace) {
+    payValue = { lovelace: prizeUtxo.value.lovelace }
+  } else if (prizeUtxo.value) {
+    payValue = prizeUtxo.value
+  } else {
+    payValue = { lovelace: 1_000_000n }
+  }
+
+  const burnAssetId = ticketPolicyId + ticketAssetName
+
+  const tx = await lucid
+    .newTx()
     .collectFrom([prizeUtxo], lucid.Data.void())
     .attachSpendingValidator(prizeValidator)
     .collectFrom([ticketUtxo])
@@ -94,27 +125,49 @@ export async function claimPrizeAuto(lucid: any, scriptAddress: string, ticketPo
     .attachMintingPolicy(mintPolicyScript)
     .payToAddress(claimantAddr, payValue)
     .addSigner(claimantAddr)
-    .complete();
+    .complete()
 
-  const signed = await lucid.signTx(tx);
-  const txHash = await lucid.submitTx(signed);
-  return txHash;
+  const signed = await lucid.signTx(tx)
+  const txHash = await lucid.submitTx(signed)
+  return txHash
 }
 
-export async function tryClaimAndNotify(lucid: any, scriptAddress: string, ticketPolicyId: string, ticketAssetName: string, onProgress?: (msg: string)=>void) {
+export async function tryClaimAndNotify(
+  lucid: any,
+  scriptAddress: string,
+  ticketPolicyId: string,
+  ticketAssetName: string,
+  onProgress?: (msg: string) => void
+) {
   try {
-    onProgress?.('Searching prize UTxO...');
-    const prizeUtxo = await findPrizeUtxo(lucid, scriptAddress, ticketPolicyId, ticketAssetName);
-    if (!prizeUtxo) throw new Error('No prize available for this ticket');
-    onProgress?.('Found prize, locating ticket in wallet...');
-    const ticketUtxo = await findTicketUtxoInWallet(lucid, ticketPolicyId, ticketAssetName);
-    if (!ticketUtxo) throw new Error('Ticket not found in wallet');
-    onProgress?.('Building transaction...');
-    const txHash = await claimPrizeAuto(lucid, scriptAddress, ticketPolicyId, ticketAssetName);
-    onProgress?.(`Submitted tx: ${txHash}`);
-    return txHash;
+    onProgress?.('Searching prize UTxO...')
+    const prizeUtxo = await findPrizeUtxo(
+      lucid,
+      scriptAddress,
+      ticketPolicyId,
+      ticketAssetName
+    )
+    if (!prizeUtxo) throw new Error('No prize available for this ticket')
+
+    onProgress?.('Found prize, locating ticket in wallet...')
+    const ticketUtxo = await findTicketUtxoInWallet(
+      lucid,
+      ticketPolicyId,
+      ticketAssetName
+    )
+    if (!ticketUtxo) throw new Error('Ticket not found in wallet')
+
+    onProgress?.('Building transaction...')
+    const txHash = await claimPrizeAuto(
+      lucid,
+      scriptAddress,
+      ticketPolicyId,
+      ticketAssetName
+    )
+    onProgress?.(`Submitted tx: ${txHash}`)
+    return txHash
   } catch (err: any) {
-    onProgress?.(`Error: ${err.message || err}`);
-    throw err;
+    onProgress?.(`Error: ${err.message || err}`)
+    throw err
   }
 }
