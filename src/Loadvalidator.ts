@@ -1,19 +1,19 @@
 // src/loadValidator.ts
 //
-// Prima di usare questo file:
+// Prima di usare:
 //   1) cd plutus && mkdir -p out && cabal run export-scripts -- <salePkhHex> <priceLovelace>
 //   2) copia i file plutus/out/*.plutus.json dentro src/plutusScripts/
-//      (Vite sa importare JSON in modo nativo, ma solo da dentro src/)
-//
-// Questo modulo trasforma ciascun file esportato nell'oggetto che Lucid si
-// aspetta per attachSpendingValidator() / attachMintingPolicy().
 
 import treasuryJson from './plutusScripts/treasury.plutus.json'
 import prizeValidatorJson from './plutusScripts/prizeValidator.plutus.json'
 import counterValidatorJson from './plutusScripts/counterValidator.plutus.json'
 import mintPolicyJson from './plutusScripts/mintPolicy.plutus.json'
 
-type ScriptEnvelope = { type: string; description: string; cborHex: string }
+type ScriptEnvelope = {
+  type: string
+  description?: string
+  cborHex: string
+}
 
 function toLucidScript(env: ScriptEnvelope) {
   return {
