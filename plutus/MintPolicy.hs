@@ -1,141 +1,164 @@
-
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE NoImplicitPrelude   #-}
-{-# LANGUAGE TemplateHaskell     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 
 module MintPolicy where
 
--- Minting policy that enforces serial NFTs using an on-chain counter UTxO.
--- The policy expects the `ValidatorHash` of the counter script as parameter.
--- Behaviour:
---  - tx must consume the counter validator UTxO with datum `n`
---  - tx must mint exactly one token whose `TokenName` encodes `n`
---  - tx must produce a new counter UTxO at the same validator address with datum `n+1`
---  - tx must pay at least `priceLovelace` to the sale PubKeyHash
+-- Minting policy per NFT seriali legati a un counter on-chain.
+--
+-- Parametri:
+--   1) ValidatorHash del CounterValidator
+--   2) PubKeyHash che deve ricevere il pagamento
+--   3) prezzo minimo in lovelace
+--
+-- Path mint:
+--   - esattamente un input counter
+--   - esattamente +1 token con TokenName = decimal ASCII di n
+--   - nessun altro asset mintato sotto questa policy
+--   - counter avanzato a n+1
+--   - pagamento >= priceLovelace al salePkh
+--
+-- Path burn (pure burn):
+--   - sotto questa policy solo amount negativi
+--   - usato dal claim in PrizeValidator
 
-import           Plutus.V2.Ledger.Api      as PlutusV2
-import           PlutusTx.Prelude          hiding (Semigroup(..), unless)
-import qualified PlutusTx
-import           Prelude                   (String)
-
-{-# INLINABLE tokenNameFromInteger #-}
--- Convert an Integer counter to a TokenName (BuiltinByteString).
-tokenNameFromInteger :: Integer -> TokenName
-tokenNameFromInteger i = TokenName (integerToBuiltinByteString i)
+import           Plutus.V2.Ledger.Api
+import           Plutus.V2.Ledger.Contexts
+import           PlutusTx
+import           PlutusTx.Prelude         hiding (Semigroup (..), unless)
 
 {-# INLINABLE integerToBuiltinByteString #-}
 integerToBuiltinByteString :: Integer -> BuiltinByteString
-integerToBuiltinByteString i =
-  let s = integerToString i
-  in toBuiltin (stringToBuiltinByteString s)
+integerToBuiltinByteString n
+  | n < 0     = integerToBuiltinByteString 0
+  | n == 0    = consByteString 48 emptyByteString
+  | otherwise = go n emptyByteString
+  where
+    go 0 acc = acc
+    go x acc =
+      let (q, r) = quotRem x 10
+          digit  = consByteString (48 + r) emptyByteString
+      in  go q (appendByteString digit acc)
 
-{-# INLINABLE stringToBuiltinByteString #-}
-stringToBuiltinByteString :: String -> BuiltinByteString
-stringToBuiltinByteString s = toBuiltin (encodeUtf8 s)
-
-{-# INLINABLE integerToString #-}
-integerToString :: Integer -> String
-integerToString i = fromBuiltin (intToBuiltin i)
-
--- The above helpers are placeholders: adapt to the actual utilities
--- available in your Plutus version.
+{-# INLINABLE tokenNameFromInteger #-}
+tokenNameFromInteger :: Integer -> TokenName
+tokenNameFromInteger i = TokenName (integerToBuiltinByteString i)
 
 {-# INLINABLE valueLovelace #-}
 valueLovelace :: Value -> Integer
 valueLovelace v = valueOf v adaSymbol adaToken
 
-{-# INLINABLE findCounterInput #-}
-findCounterInput :: ValidatorHash -> [TxInInfo] -> Maybe TxInInfo
-findCounterInput vhash = find isCounterInput
-  where
-    isCounterInput txIn = case addressCredential (txOutAddress (txInInfoResolved txIn)) of
-      ScriptCredential vh -> vh == vhash
-      _                   -> False
+{-# INLINABLE readIntegerDatum #-}
+readIntegerDatum :: TxInfo -> TxOut -> Maybe Integer
+readIntegerDatum info out =
+  case txOutDatum out of
+    OutputDatum d ->
+      case fromBuiltinData (getDatum d) of
+        Just (n :: Integer) -> Just n
+        Nothing             -> Nothing
+    OutputDatumHash dh ->
+      case findDatum dh info of
+        Just d ->
+          case fromBuiltinData (getDatum d) of
+            Just (n :: Integer) -> Just n
+            Nothing             -> Nothing
+        Nothing -> Nothing
+    NoOutputDatum -> Nothing
 
-{-# INLINABLE readCounterDatum #-}
-readCounterDatum :: TxInfo -> TxOut -> Maybe Integer
-readCounterDatum info out = do
-  dh <- txOutDatumHash out
-  d  <- findDatum dh info
-  PlutusTx.fromBuiltinData (getDatum d)
+{-# INLINABLE findCounterInputs #-}
+findCounterInputs :: ValidatorHash -> [TxInInfo] -> [TxInInfo]
+findCounterInputs vhash =
+  filter
+    (\txIn ->
+        case addressCredential (txOutAddress (txInInfoResolved txIn)) of
+          ScriptCredential vh -> vh == vhash
+          _                   -> False
+    )
 
 {-# INLINABLE hasNextCounterOutput #-}
 hasNextCounterOutput :: ValidatorHash -> Integer -> TxInfo -> Bool
-hasNextCounterOutput vhash n info = any isNextCounter (txInfoOutputs info)
+hasNextCounterOutput vhash n info =
+  length matches == 1
   where
-    isNextCounter out =
-      case addressCredential (txOutAddress out) of
-        ScriptCredential vh | vh == vhash ->
-          case readCounterDatum info out of
-            Just m  -> m == n + 1
-            Nothing -> False
-        _ -> False
+    matches =
+      filter
+        (\out ->
+            case addressCredential (txOutAddress out) of
+              ScriptCredential vh
+                | vh == vhash ->
+                    case readIntegerDatum info out of
+                      Just m  -> m == n + 1
+                      Nothing -> False
+              _ -> False
+        )
+        (txInfoOutputs info)
 
 {-# INLINABLE lovelacePaidTo #-}
 lovelacePaidTo :: PubKeyHash -> [TxOut] -> Integer
-lovelacePaidTo pkh = foldl' accumulate 0
-  where
-    accumulate tot out =
-      case addressCredential (txOutAddress out) of
-        PubKeyCredential outPkh | outPkh == pkh -> tot + valueLovelace (txOutValue out)
-        _                                       -> tot
+lovelacePaidTo pkh =
+  foldl'
+    (\tot out ->
+        case addressCredential (txOutAddress out) of
+          PubKeyCredential outPkh
+            | outPkh == pkh -> tot + valueLovelace (txOutValue out)
+          _ -> tot
+    )
+    0
 
-{-# INLINABLE mintedExpectedToken #-}
-mintedExpectedToken :: CurrencySymbol -> TokenName -> Value -> Bool
-mintedExpectedToken ownCs expectedName minted =
-  length matches == 1
-  where
-    matches = filter matchOne (flattenValue minted)
-    matchOne (cs, tn, amt) = cs == ownCs && tn == expectedName && amt == 1
+{-# INLINABLE ownMintEntries #-}
+ownMintEntries :: CurrencySymbol -> Value -> [(CurrencySymbol, TokenName, Integer)]
+ownMintEntries ownCs minted =
+  [ e | e@(cs, _, _) <- flattenValue minted, cs == ownCs ]
 
 {-# INLINABLE isPureBurn #-}
--- A "pure burn": every entry minted under our own currency symbol has a
--- negative amount (i.e. this tx only destroys tickets, never creates any).
--- This is what allows PrizeValidator to burn a ticket on claim without
--- satisfying the serial-mint/counter rules below, which only apply to minting.
 isPureBurn :: CurrencySymbol -> Value -> Bool
 isPureBurn ownCs minted =
-  case ownEntries of
+  case ownMintEntries ownCs minted of
     [] -> False
     xs -> all (\(_, _, amt) -> amt < 0) xs
-  where
-    ownEntries = [ e | e@(cs, _, _) <- flattenValue minted, cs == ownCs ]
+
+{-# INLINABLE mintedExactlyOneSerial #-}
+mintedExactlyOneSerial :: CurrencySymbol -> TokenName -> Value -> Bool
+mintedExactlyOneSerial ownCs expectedName minted =
+  case ownMintEntries ownCs minted of
+    [(cs, tn, amt)] -> cs == ownCs && tn == expectedName && amt == 1
+    _               -> False
 
 {-# INLINABLE mkPolicy #-}
--- The policy expects three parameters:
---  1) the `ValidatorHash` of the counter script
---  2) the `PubKeyHash` (sale address) that must receive the required payment
---  3) the minimum price in lovelace that must be paid to the sale address
-mkPolicy :: ValidatorHash -> PubKeyHash -> Integer -> BuiltinData -> ScriptContext -> Bool
+mkPolicy :: ValidatorHash -> PubKeyHash -> Integer -> () -> ScriptContext -> Bool
 mkPolicy vhash salePkh priceLovelace _ ctx
-  | isPureBurn (ownCurrencySymbol ctx) (txInfoMint info) = True
+  | isPureBurn ownCs minted = True
   | otherwise =
-  case findCounterInput vhash (txInfoInputs info) of
-    Nothing -> traceError "counter input not found"
-    Just txIn ->
-      case readCounterDatum info (txInInfoResolved txIn) of
-        Nothing -> traceError "invalid or missing counter datum"
-        Just n ->
-          let expectedName  = tokenNameFromInteger n
-              mintOk         = mintedExpectedToken (ownCurrencySymbol ctx) expectedName (txInfoMint info)
-              counterAdvanced = hasNextCounterOutput vhash n info
-              paidEnough      = lovelacePaidTo salePkh (txInfoOutputs info) >= priceLovelace
-          in traceIfFalse "expected exactly one serial NFT with correct name" mintOk &&
-             traceIfFalse "counter UTxO was not advanced to n+1" counterAdvanced &&
-             traceIfFalse "sale payment insufficient" paidEnough
+      case findCounterInputs vhash (txInfoInputs info) of
+        [txIn] ->
+          case readIntegerDatum info (txInInfoResolved txIn) of
+            Nothing -> traceError "invalid or missing counter datum"
+            Just n ->
+              let expectedName    = tokenNameFromInteger n
+                  mintOk          = mintedExactlyOneSerial ownCs expectedName minted
+                  counterAdvanced = hasNextCounterOutput vhash n info
+                  paidEnough      = lovelacePaidTo salePkh (txInfoOutputs info) >= priceLovelace
+              in  traceIfFalse "expected exactly one serial NFT with correct name" mintOk
+                    && traceIfFalse "counter UTxO was not advanced to n+1" counterAdvanced
+                    && traceIfFalse "sale payment insufficient" paidEnough
+        []  -> traceError "counter input not found"
+        _   -> traceError "expected exactly one counter input"
   where
-    info = scriptContextTxInfo ctx
+    info   = scriptContextTxInfo ctx
+    ownCs  = ownCurrencySymbol ctx
+    minted = txInfoMint info
 
 policyCompiled :: ValidatorHash -> PubKeyHash -> Integer -> MintingPolicy
 policyCompiled vh salePkh price =
   mkMintingPolicyScript
-    (PlutusV2.mkUntypedMintingPolicy $ mkPolicy vh salePkh price)
+    ( $$(compile [|| \vh' pkh' price' -> mkUntypedMintingPolicy (mkPolicy vh' pkh' price') ||])
+        `applyCode` liftCode vh
+        `applyCode` liftCode salePkh
+        `applyCode` liftCode price
+    )
 
 plutusScript :: ValidatorHash -> PubKeyHash -> Integer -> Script
-plutusScript vh salePkh price = unMintingPolicyScript $ policyCompiled vh salePkh price
-
--- NOTE: PlutusTx.makeLift instances for `ValidatorHash` and `PubKeyHash` are required
-PlutusTx.makeLift ''ValidatorHash
-PlutusTx.makeLift ''PubKeyHash
+plutusScript vh salePkh price =
+  unMintingPolicyScript (policyCompiled vh salePkh price)
