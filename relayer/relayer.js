@@ -3,14 +3,21 @@
   - Watches treasury address
   - When balance >= threshold, builds distribution tx that pays prize/stake/reserve and relayer reward
   - Uses the preprod treasury policy: 25 ADA threshold, 50/30/19.5 split, relayer fee budget 0.5% with 0.2 ADA floor
+
+  IMPORTANT: before running this, export the compiled Treasury validator:
+    cd ../plutus && mkdir -p out && cabal run export-scripts -- <salePkhHex> <priceLovelace>
+  (the export also produces the other scripts; this relayer only needs
+  plutus/out/treasury.plutus.json)
 */
 
-const { Lucid, Blockfrost, Data, walletFromPrivateKey } = require('lucid-cardano')
+const { Lucid, Blockfrost, Data, Constr, walletFromPrivateKey } = require('lucid-cardano')
 require('dotenv').config()
+const { loadScript, TREASURY_SCRIPT_PATH } = require('./loadValidator')
 
 const TOTAL_BASIS = 10_000n
 const DISTRIBUTABLE_BASIS = 9_950n
 const DEFAULT_THRESHOLD = 25_000_000n
+
 function parseBigInt(value, fallback) {
   if (value === undefined || value === null || value === '') return fallback
   return BigInt(value)
@@ -45,6 +52,12 @@ if (!BLOCKFROST || !TREASURY_ADDRESS) {
   process.exit(1)
 }
 
+// Redeemer for TreasuryAction = Distribute (single nullary constructor at
+// index 0). Built explicitly with Constr instead of relying on Data.void()
+// happening to encode to the same bytes -- clearer and safer if the
+// TreasuryAction type ever gains more constructors.
+const DISTRIBUTE_REDEEMER = Data.to(new Constr(0, []))
+
 async function main() {
   const provider = new Blockfrost('https://cardano-preprod.blockfrost.io', BLOCKFROST)
   const lucid = await Lucid.new(provider, NETWORK)
@@ -56,6 +69,8 @@ async function main() {
 
   const wallet = await walletFromPrivateKey(relayerPrivateKey)
   lucid.selectWallet(wallet)
+
+  const treasuryValidator = loadScript(TREASURY_SCRIPT_PATH)
 
   console.log('Relayer started, watching', TREASURY_ADDRESS)
 
@@ -80,30 +95,36 @@ async function main() {
         const reserveAddr = process.env.RESERVE_ADDRESS
         const relayerAddr = await lucid.wallet.address()
 
-        const tx = await lucid.newTx()
+        // Refuse to build the tx if any destination address is missing,
+        // instead of silently letting that share fall back to the relayer's
+        // own change output. Previously an unset env var meant the relayer
+        // could end up keeping the prize/stake/reserve share by accident.
+        const missing = []
+        if (!prizeAddr) missing.push('PRIZE_ADDRESS')
+        if (!stakeAddr) missing.push('STAKE_ADDRESS')
+        if (!reserveAddr) missing.push('RESERVE_ADDRESS')
+        if (missing.length > 0) {
+          console.error('Refusing to distribute: missing env vars:', missing.join(', '))
+        } else {
+          const tx = await lucid.newTx()
 
-        for (const u of utxos) {
-          tx.collectFrom([u], Data.void())
-        }
+          for (const u of utxos) {
+            tx.collectFrom([u], DISTRIBUTE_REDEEMER)
+          }
+          // attachSpendingValidator only needs to be called once per tx;
+          // Lucid applies it to every script input collected above.
+          tx.attachSpendingValidator(treasuryValidator)
 
-        if (prizeAddr) {
           tx.payToAddress(prizeAddr, { lovelace: distribution.prize })
-        }
-
-        if (stakeAddr) {
           tx.payToAddress(stakeAddr, { lovelace: distribution.stake })
-        }
-
-        if (reserveAddr) {
           tx.payToAddress(reserveAddr, { lovelace: distribution.reserve })
+          tx.payToAddress(relayerAddr, { lovelace: distribution.relayerReward })
+
+          const built = await tx.complete()
+          const signed = await lucid.signTx(built)
+          const hash = await lucid.submitTx(signed)
+          console.log('Distribution tx submitted:', hash)
         }
-
-        tx.payToAddress(relayerAddr, { lovelace: distribution.relayerReward })
-
-        const built = await tx.complete()
-        const signed = await lucid.signTx(built)
-        const hash = await lucid.submitTx(signed)
-        console.log('Distribution tx submitted:', hash)
       }
     } catch (e) {
       console.error('Relayer error:', e)
