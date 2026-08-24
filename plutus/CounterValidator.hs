@@ -4,17 +4,15 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 
-module CounterValidator where
+module CounterValidator
+  ( mkValidator
+  , compiledValidator
+  ) where
 
-import           Plutus.V2.Ledger.Api
-import           Plutus.V2.Ledger.Contexts
+import           PlutusLedgerApi.V2
+import           PlutusLedgerApi.V2.Contexts
 import           PlutusTx
-import           PlutusTx.Prelude         hiding (Semigroup (..), unless)
-
--- Datum = contatore corrente (Integer puro, compatibile con lucid Data.to(n)).
--- Spend valido solo se:
---   1) esiste esattamente un output allo stesso script con datum n+1
---   2) i lovelace bloccati sullo script non diminuiscono
+import           PlutusTx.Prelude            hiding (Semigroup (..), unless)
 
 {-# INLINABLE readIntegerDatum #-}
 readIntegerDatum :: TxInfo -> TxOut -> Maybe Integer
@@ -37,49 +35,58 @@ readIntegerDatum info out =
 lovelaceOf :: Value -> Integer
 lovelaceOf v = valueOf v adaSymbol adaToken
 
+{-# INLINABLE listLength #-}
+listLength :: [a] -> Integer
+listLength []     = 0
+listLength (_:xs) = 1 + listLength xs
+
+{-# INLINABLE outsAtAddress #-}
+outsAtAddress :: Address -> [TxOut] -> [TxOut]
+outsAtAddress _ [] = []
+outsAtAddress addr (o:os) =
+  if txOutAddress o == addr
+    then o : outsAtAddress addr os
+    else outsAtAddress addr os
+
+{-# INLINABLE nextCounterOuts #-}
+nextCounterOuts :: TxInfo -> Integer -> [TxOut] -> [TxOut]
+nextCounterOuts _ _ [] = []
+nextCounterOuts info current (o:os) =
+  case readIntegerDatum info o of
+    Just next
+      | next == current + 1 -> o : nextCounterOuts info current os
+    _ -> nextCounterOuts info current os
+
 {-# INLINABLE mkValidator #-}
 mkValidator :: Integer -> () -> ScriptContext -> Bool
 mkValidator current _ ctx =
-  let info = scriptContextTxInfo ctx
-  in case findOwnInput ctx of
-       Nothing -> traceError "CounterValidator: missing own input"
-       Just i  ->
-         let ownAddress    = txOutAddress (txInInfoResolved i)
-             ownInLovelace = lovelaceOf (txOutValue (txInInfoResolved i))
+  case findOwnInput ctx of
+    Nothing -> traceError "CounterValidator: missing own input"
+    Just i  ->
+      let info          = scriptContextTxInfo ctx
+          ownAddress    = txOutAddress (txInInfoResolved i)
+          ownInLovelace = lovelaceOf (txOutValue (txInInfoResolved i))
+          scriptOuts    = outsAtAddress ownAddress (txInfoOutputs info)
+          nextOuts      = nextCounterOuts info current scriptOuts
+          exactlyOneNext    = listLength nextOuts == 1
+          noExtraScriptOuts = listLength scriptOuts == 1
+          valuePreserved =
+            case nextOuts of
+              [o] -> lovelaceOf (txOutValue o) >= ownInLovelace
+              _   -> False
+      in  traceIfFalse "CounterValidator: expected exactly one n+1 counter output" exactlyOneNext
+            && traceIfFalse "CounterValidator: unexpected extra script outputs" noExtraScriptOuts
+            && traceIfFalse "CounterValidator: script value was drained" valuePreserved
 
-             scriptOuts =
-               filter (\o -> txOutAddress o == ownAddress) (txInfoOutputs info)
+{-# INLINABLE wrap #-}
+wrap :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinUnit
+wrap d r ctx =
+  check
+    ( mkValidator
+        (unsafeFromBuiltinData d)
+        (unsafeFromBuiltinData r)
+        (unsafeFromBuiltinData ctx)
+    )
 
-             nextCounterOuts =
-               filter
-                 (\o ->
-                     case readIntegerDatum info o of
-                       Just next -> next == current + 1
-                       Nothing   -> False
-                 )
-                 scriptOuts
-
-             exactlyOneNext = length nextCounterOuts == 1
-             noExtraScriptOuts = length scriptOuts == 1
-
-             valuePreserved =
-               case nextCounterOuts of
-                 [o] -> lovelaceOf (txOutValue o) >= ownInLovelace
-                 _   -> False
-
-         in  traceIfFalse "CounterValidator: expected exactly one n+1 counter output" exactlyOneNext
-               && traceIfFalse "CounterValidator: unexpected extra script outputs" noExtraScriptOuts
-               && traceIfFalse "CounterValidator: script value was drained" valuePreserved
-
-validator :: Validator
-validator =
-  mkValidatorScript
-    $$(compile [|| mkUntypedValidator mkValidator ||])
-
-counterValidatorHash :: ValidatorHash
-counterValidatorHash = validatorHash validator
-validatorScript :: Script
-validatorScript = unValidatorScript validator
-```
-
-migliorati ulteriormente, credo
+compiledValidator :: CompiledCode (BuiltinData -> BuiltinData -> BuiltinData -> BuiltinUnit)
+compiledValidator = $$(compile [|| wrap ||])

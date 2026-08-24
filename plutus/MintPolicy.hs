@@ -4,30 +4,15 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 
-module MintPolicy where
+module MintPolicy
+  ( mkPolicy
+  , compiledPolicyFactory
+  ) where
 
--- Minting policy per NFT seriali legati a un counter on-chain.
---
--- Parametri:
---   1) ValidatorHash del CounterValidator
---   2) PubKeyHash che deve ricevere il pagamento
---   3) prezzo minimo in lovelace
---
--- Path mint:
---   - esattamente un input counter
---   - esattamente +1 token con TokenName = decimal ASCII di n
---   - nessun altro asset mintato sotto questa policy
---   - counter avanzato a n+1
---   - pagamento >= priceLovelace al salePkh
---
--- Path burn (pure burn):
---   - sotto questa policy solo amount negativi
---   - usato dal claim in PrizeValidator
-
-import           Plutus.V2.Ledger.Api
-import           Plutus.V2.Ledger.Contexts
+import           PlutusLedgerApi.V2
+import           PlutusLedgerApi.V2.Contexts
 import           PlutusTx
-import           PlutusTx.Prelude         hiding (Semigroup (..), unless)
+import           PlutusTx.Prelude            hiding (Semigroup (..), unless)
 
 {-# INLINABLE integerToBuiltinByteString #-}
 integerToBuiltinByteString :: Integer -> BuiltinByteString
@@ -36,11 +21,13 @@ integerToBuiltinByteString n
   | n == 0    = consByteString 48 emptyByteString
   | otherwise = go n emptyByteString
   where
-    go 0 acc = acc
-    go x acc =
-      let (q, r) = quotRem x 10
-          digit  = consByteString (48 + r) emptyByteString
-      in  go q (appendByteString digit acc)
+    go x acc
+      | x == 0    = acc
+      | otherwise =
+          let q     = divide x 10
+              r     = remainder x 10
+              digit = consByteString (48 + r) emptyByteString
+          in  go q (appendByteString digit acc)
 
 {-# INLINABLE tokenNameFromInteger #-}
 tokenNameFromInteger :: Integer -> TokenName
@@ -67,57 +54,64 @@ readIntegerDatum info out =
         Nothing -> Nothing
     NoOutputDatum -> Nothing
 
+{-# INLINABLE listLength #-}
+listLength :: [a] -> Integer
+listLength []     = 0
+listLength (_:xs) = 1 + listLength xs
+
 {-# INLINABLE findCounterInputs #-}
-findCounterInputs :: ValidatorHash -> [TxInInfo] -> [TxInInfo]
-findCounterInputs vhash =
-  filter
-    (\txIn ->
-        case addressCredential (txOutAddress (txInInfoResolved txIn)) of
-          ScriptCredential vh -> vh == vhash
-          _                   -> False
-    )
+findCounterInputs :: ScriptHash -> [TxInInfo] -> [TxInInfo]
+findCounterInputs _ [] = []
+findCounterInputs sh (txIn:rest) =
+  case addressCredential (txOutAddress (txInInfoResolved txIn)) of
+    ScriptCredential h
+      | h == sh -> txIn : findCounterInputs sh rest
+    _ -> findCounterInputs sh rest
 
 {-# INLINABLE hasNextCounterOutput #-}
-hasNextCounterOutput :: ValidatorHash -> Integer -> TxInfo -> Bool
-hasNextCounterOutput vhash n info =
-  length matches == 1
+hasNextCounterOutput :: ScriptHash -> Integer -> TxInfo -> Bool
+hasNextCounterOutput sh n info =
+  listLength (go (txInfoOutputs info)) == 1
   where
-    matches =
-      filter
-        (\out ->
-            case addressCredential (txOutAddress out) of
-              ScriptCredential vh
-                | vh == vhash ->
-                    case readIntegerDatum info out of
-                      Just m  -> m == n + 1
-                      Nothing -> False
-              _ -> False
-        )
-        (txInfoOutputs info)
+    go [] = []
+    go (out:rest) =
+      case addressCredential (txOutAddress out) of
+        ScriptCredential h
+          | h == sh ->
+              case readIntegerDatum info out of
+                Just m
+                  | m == n + 1 -> out : go rest
+                _ -> go rest
+        _ -> go rest
 
 {-# INLINABLE lovelacePaidTo #-}
 lovelacePaidTo :: PubKeyHash -> [TxOut] -> Integer
-lovelacePaidTo pkh =
-  foldl'
-    (\tot out ->
-        case addressCredential (txOutAddress out) of
-          PubKeyCredential outPkh
-            | outPkh == pkh -> tot + valueLovelace (txOutValue out)
-          _ -> tot
-    )
-    0
+lovelacePaidTo _ [] = 0
+lovelacePaidTo pkh (out:rest) =
+  case addressCredential (txOutAddress out) of
+    PubKeyCredential outPkh
+      | outPkh == pkh -> valueLovelace (txOutValue out) + lovelacePaidTo pkh rest
+    _ -> lovelacePaidTo pkh rest
 
 {-# INLINABLE ownMintEntries #-}
 ownMintEntries :: CurrencySymbol -> Value -> [(CurrencySymbol, TokenName, Integer)]
-ownMintEntries ownCs minted =
-  [ e | e@(cs, _, _) <- flattenValue minted, cs == ownCs ]
+ownMintEntries ownCs minted = go (flattenValue minted)
+  where
+    go [] = []
+    go (e@(cs, _, _):rest) =
+      if cs == ownCs then e : go rest else go rest
+
+{-# INLINABLE allNegative #-}
+allNegative :: [(CurrencySymbol, TokenName, Integer)] -> Bool
+allNegative [] = True
+allNegative ((_, _, amt):rest) = amt < 0 && allNegative rest
 
 {-# INLINABLE isPureBurn #-}
 isPureBurn :: CurrencySymbol -> Value -> Bool
 isPureBurn ownCs minted =
   case ownMintEntries ownCs minted of
     [] -> False
-    xs -> all (\(_, _, amt) -> amt < 0) xs
+    xs -> allNegative xs
 
 {-# INLINABLE mintedExactlyOneSerial #-}
 mintedExactlyOneSerial :: CurrencySymbol -> TokenName -> Value -> Bool
@@ -127,38 +121,51 @@ mintedExactlyOneSerial ownCs expectedName minted =
     _               -> False
 
 {-# INLINABLE mkPolicy #-}
-mkPolicy :: ValidatorHash -> PubKeyHash -> Integer -> () -> ScriptContext -> Bool
-mkPolicy vhash salePkh priceLovelace _ ctx
+mkPolicy :: ScriptHash -> PubKeyHash -> Integer -> () -> ScriptContext -> Bool
+mkPolicy sh salePkh priceLovelace _ ctx
   | isPureBurn ownCs minted = True
   | otherwise =
-      case findCounterInputs vhash (txInfoInputs info) of
+      case findCounterInputs sh (txInfoInputs info) of
         [txIn] ->
           case readIntegerDatum info (txInInfoResolved txIn) of
             Nothing -> traceError "invalid or missing counter datum"
             Just n ->
               let expectedName    = tokenNameFromInteger n
                   mintOk          = mintedExactlyOneSerial ownCs expectedName minted
-                  counterAdvanced = hasNextCounterOutput vhash n info
+                  counterAdvanced = hasNextCounterOutput sh n info
                   paidEnough      = lovelacePaidTo salePkh (txInfoOutputs info) >= priceLovelace
               in  traceIfFalse "expected exactly one serial NFT with correct name" mintOk
                     && traceIfFalse "counter UTxO was not advanced to n+1" counterAdvanced
                     && traceIfFalse "sale payment insufficient" paidEnough
-        []  -> traceError "counter input not found"
-        _   -> traceError "expected exactly one counter input"
+        [] -> traceError "counter input not found"
+        _  -> traceError "expected exactly one counter input"
   where
     info   = scriptContextTxInfo ctx
     ownCs  = ownCurrencySymbol ctx
     minted = txInfoMint info
 
-policyCompiled :: ValidatorHash -> PubKeyHash -> Integer -> MintingPolicy
-policyCompiled vh salePkh price =
-  mkMintingPolicyScript
-    ( $$(compile [|| \vh' pkh' price' -> mkUntypedMintingPolicy (mkPolicy vh' pkh' price') ||])
-        `applyCode` liftCode vh
-        `applyCode` liftCode salePkh
-        `applyCode` liftCode price
+{-# INLINABLE wrap #-}
+wrap
+  :: ScriptHash
+  -> PubKeyHash
+  -> Integer
+  -> BuiltinData
+  -> BuiltinData
+  -> BuiltinUnit
+wrap sh pkh price r ctx =
+  check
+    ( mkPolicy sh pkh price
+        (unsafeFromBuiltinData r)
+        (unsafeFromBuiltinData ctx)
     )
 
-plutusScript :: ValidatorHash -> PubKeyHash -> Integer -> Script
-plutusScript vh salePkh price =
-  unMintingPolicyScript (policyCompiled vh salePkh price)
+compiledPolicyFactory
+  :: CompiledCode
+       ( ScriptHash
+         -> PubKeyHash
+         -> Integer
+         -> BuiltinData
+         -> BuiltinData
+         -> BuiltinUnit
+       )
+compiledPolicyFactory = $$(compile [|| wrap ||])
