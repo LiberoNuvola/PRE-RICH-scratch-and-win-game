@@ -13,6 +13,10 @@
  *
  * The canonical round identity is established before publication
  * of the external Materios receipt.
+ *
+ * The GameRoundCommitment is stored directly inside the
+ * BeaconRegistryDatum and is therefore authenticated by the
+ * BeaconRegistry validator.
  */
 
 import {
@@ -119,6 +123,10 @@ export async function publishRoundBeacon(
     throw new Error('roundId !== target.round')
   }
 
+  if (p.roundId < 0) {
+    throw new Error('roundId must be >= 0')
+  }
+
   if (p.gameId.length === 0) {
     throw new Error('gameId is empty')
   }
@@ -165,6 +173,82 @@ export async function publishRoundBeacon(
     throw new Error('materiosContext is empty')
   }
 
+  /*
+   * The Pending registry UTxO must already contain this exact
+   * GameRoundCommitment. We cannot authenticate the previous datum
+   * purely from the generic `any` type, but if the caller exposes
+   * the decoded datum we verify it before constructing the Ready datum.
+   *
+   * This is an off-chain consistency check only.
+   * The authoritative check is performed by BeaconRegistry.hs.
+   */
+  if (p.registryUtxo?.datum) {
+    const pending = p.registryUtxo.datum
+
+    if (
+      pending.brRound !== undefined &&
+      Number(pending.brRound) !== p.roundId
+    ) {
+      throw new Error(
+        'Pending registry datum round does not match roundId',
+      )
+    }
+
+    if (
+      pending.brGameRoundCommitment !== undefined
+    ) {
+      const pendingCommitment =
+        pending.brGameRoundCommitment
+
+      if (
+        pendingCommitment.grcGameId !== undefined &&
+        toHex(pendingCommitment.grcGameId) !== toHex(p.gameId)
+      ) {
+        throw new Error(
+          'Pending registry gameId does not match canonical gameId',
+        )
+      }
+
+      if (
+        pendingCommitment.grcRound !== undefined &&
+        Number(pendingCommitment.grcRound) !== p.roundId
+      ) {
+        throw new Error(
+          'Pending registry commitment round does not match roundId',
+        )
+      }
+
+      if (
+        pendingCommitment.grcConfigHash !== undefined &&
+        toHex(pendingCommitment.grcConfigHash) !== toHex(p.configHash)
+      ) {
+        throw new Error(
+          'Pending registry configHash does not match canonical configHash',
+        )
+      }
+
+      if (
+        pendingCommitment.grcProtocolVersion !== undefined &&
+        toHex(pendingCommitment.grcProtocolVersion) !==
+          toHex(p.protocolVersion)
+      ) {
+        throw new Error(
+          'Pending registry protocolVersion does not match canonical protocolVersion',
+        )
+      }
+
+      if (
+        pendingCommitment.grcCommitmentHash !== undefined &&
+        toHex(pendingCommitment.grcCommitmentHash) !==
+          toHex(p.gameRoundCommitment)
+      ) {
+        throw new Error(
+          'Pending registry commitment hash does not match canonical commitment',
+        )
+      }
+    }
+  }
+
   const R = await deriveBeacon(
     p.target.networkId,
     p.target.round,
@@ -174,18 +258,16 @@ export async function publishRoundBeacon(
     p.target.version,
   )
 
+  /*
+   * IMPORTANT:
+   *
+   * BeaconRegistryDatum now contains the complete
+   * GameRoundCommitment as a single nested value.
+   *
+   * Do not add brGameId/brConfigHash/brProtocolVersion here:
+   * they are intentionally contained inside brGameRoundCommitment.
+   */
   const readyDatum = p.buildReadyDatum({
-    brGameId: p.gameId,
-    brConfigHash: p.configHash,
-    brProtocolVersion: p.protocolVersion,
-    brGameRoundCommitment: {
-      grcGameId: p.gameId,
-      grcRound: p.roundId,
-      grcConfigHash: p.configHash,
-      grcProtocolVersion: p.protocolVersion,
-      grcCommitmentHash: p.gameRoundCommitment,
-    },
-
     brRound: p.roundId,
     brTarget: p.target,
     brStatus: 'BeaconReady',
@@ -193,6 +275,14 @@ export async function publishRoundBeacon(
     brMcHash: p.mcHash,
     brMateriosContext: p.materiosContext,
     brRelayerPkh: p.relayerPkh,
+
+    brGameRoundCommitment: {
+      grcGameId: p.gameId,
+      grcRound: p.roundId,
+      grcConfigHash: p.configHash,
+      grcProtocolVersion: p.protocolVersion,
+      grcCommitmentHash: p.gameRoundCommitment,
+    },
   })
 
   const redeemer = p.buildPublishRedeemer(

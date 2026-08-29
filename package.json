@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "relayer": "node relayer/relayer.js",
     "admin:treasury": "node scripts/admin-treasury.js",
-    "test:predeploy": "node --experimental-strip-types scripts/predeploy-check.mjs"
+    "test:predeploy": "node --experimental-strip-types scripts/predeploy-check.mjs",
      "deploy:counter": "tsx scripts/deployCounter.ts"
   }
 }

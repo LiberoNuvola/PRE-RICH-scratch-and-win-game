@@ -16,7 +16,6 @@ export function integerToBytes(
   n: number | bigint
 ): Uint8Array {
   let x = typeof n === 'bigint' ? n : BigInt(n)
-
   // Match Plutus integerToBytes:
   // negative values are normalized to 0.
   if (x < 0n) {
@@ -94,7 +93,6 @@ export function concatBytes(
   const out = new Uint8Array(total)
 
   let offset = 0
-
   for (const p of parts) {
     out.set(p, offset)
     offset += p.length
@@ -120,9 +118,13 @@ export function utf8(
 export async function sha256(
   data: Uint8Array
 ): Promise<Uint8Array> {
+  const buffer = new ArrayBuffer(data.byteLength)
+
+  new Uint8Array(buffer).set(data)
+
   const hash = await crypto.subtle.digest(
     'SHA-256',
-    data
+    buffer
   )
 
   return new Uint8Array(hash)
