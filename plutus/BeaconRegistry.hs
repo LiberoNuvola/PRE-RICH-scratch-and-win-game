@@ -6,7 +6,17 @@
 {-# LANGUAGE ViewPatterns        #-}
 
 -- | Light bridge: one UTxO per PRE-RICH round.
--- Publish once: R = deriveBeacon(target, mcHash, materiosContext).
+--
+-- The registry stores the authenticated result context supplied by the
+-- authorized relayer:
+--
+--   R = deriveBeacon(target, mcHash, materiosContext)
+--
+-- The on-chain validator does not claim to independently verify an
+-- external Materios receipt. Instead, it verifies that the designated
+-- relayer authorized the publication and that the published beacon is
+-- exactly derived from the supplied receipt commitment/context.
+--
 -- Tickets reference this UTxO; they never invent R alone.
 
 module BeaconRegistry
@@ -20,6 +30,7 @@ import PlutusTx
 import PlutusTx.Prelude hiding (Semigroup (..), unless)
 
 import Beacon (deriveBeacon)
+
 import Types
   ( BeaconRegistryDatum (..)
   , BeaconRegistryAction (..)
@@ -46,27 +57,40 @@ countOwnInputs addr (i:is) =
 decodeReg :: TxInfo -> TxOut -> Maybe BeaconRegistryDatum
 decodeReg info out =
   case txOutDatum out of
-    OutputDatum d -> fromBuiltinData (getDatum d)
+    OutputDatum d ->
+      fromBuiltinData (getDatum d)
+
     OutputDatumHash dh ->
       case findDatum dh info of
         Just d  -> fromBuiltinData (getDatum d)
         Nothing -> Nothing
-    NoOutputDatum -> Nothing
+
+    NoOutputDatum ->
+      Nothing
 
 {-# INLINABLE findSingleContinuing #-}
-findSingleContinuing :: Address -> TxInfo -> Maybe BeaconRegistryDatum
-findSingleContinuing addr info = go (txInfoOutputs info) Nothing
+findSingleContinuing
+  :: Address
+  -> TxInfo
+  -> Maybe BeaconRegistryDatum
+findSingleContinuing addr info =
+  go (txInfoOutputs info) Nothing
   where
     go [] acc = acc
+
     go (o:os) acc =
       if txOutAddress o == addr
-        then case acc of
-               Just _  -> Nothing
-               Nothing ->
-                 case decodeReg info o of
-                   Just d  -> go os (Just d)
-                   Nothing -> Nothing
-        else go os acc
+        then
+          case acc of
+            Just _ ->
+              Nothing
+
+            Nothing ->
+              case decodeReg info o of
+                Just d  -> go os (Just d)
+                Nothing -> Nothing
+        else
+          go os acc
 
 {-# INLINABLE sameTarget #-}
 sameTarget :: BeaconTarget -> BeaconTarget -> Bool
@@ -75,6 +99,17 @@ sameTarget a b =
   && btRound a == btRound b
   && btMainchainRef a == btMainchainRef b
   && btVersion a == btVersion b
+
+{-# INLINABLE relayerSigned #-}
+relayerSigned :: PubKeyHash -> TxInfo -> Bool
+relayerSigned relayer info =
+  pkElem relayer (txInfoSignatories info)
+  where
+    {-# INLINABLE pkElem #-}
+    pkElem :: PubKeyHash -> [PubKeyHash] -> Bool
+    pkElem _ [] = False
+    pkElem x (y:ys) =
+      x == y || pkElem x ys
 
 {-# INLINABLE validatePublish #-}
 validatePublish
@@ -85,9 +120,10 @@ validatePublish
   -> Bool
 validatePublish datum mcHash materiosContext ctx =
   let
-    info = scriptContextTxInfo ctx
-    addr = ownAddress ctx
+    info   = scriptContextTxInfo ctx
+    addr   = ownAddress ctx
     target = brTarget datum
+
     expectedR =
       deriveBeacon
         (btNetworkId target)
@@ -96,21 +132,48 @@ validatePublish datum mcHash materiosContext ctx =
         mcHash
         materiosContext
         (btVersion target)
+
     next = findSingleContinuing addr info
+
   in
-       traceIfFalse "Registry: not pending" (brStatus datum == BeaconPending)
-    && traceIfFalse "Registry: empty mcHash" (lengthOfByteString mcHash > 0)
-    && traceIfFalse "Registry: empty context" (lengthOfByteString materiosContext > 0)
-    && traceIfFalse "Registry: multi input" (countOwnInputs addr (txInfoInputs info) == 1)
+       traceIfFalse
+         "Registry: not pending"
+         (brStatus datum == BeaconPending)
+
+    && traceIfFalse
+         "Registry: relayer signature"
+         (relayerSigned (brRelayerPkh datum) info)
+
+    && traceIfFalse
+         "Registry: empty mcHash"
+         (lengthOfByteString mcHash > 0)
+
+    && traceIfFalse
+         "Registry: empty context"
+         (lengthOfByteString materiosContext > 0)
+
+    && traceIfFalse
+         "Registry: multi input"
+         (countOwnInputs addr (txInfoInputs info) == 1)
+
     && case next of
-         Nothing -> traceIfFalse "Registry: no continuing" False
-         Just n  ->
+         Nothing ->
+           traceIfFalse "Registry: no continuing" False
+
+         Just n ->
               sameTarget (brTarget n) target
+
            && brStatus n == BeaconReady
+
            && brBeaconValue n == expectedR
+
            && brMcHash n == mcHash
+
            && brMateriosContext n == materiosContext
+
            && brRound n == brRound datum
+
+           && brRelayerPkh n == brRelayerPkh datum
 
 {-# INLINABLE mkValidator #-}
 mkValidator
@@ -124,7 +187,11 @@ mkValidator datum action ctx =
       validatePublish datum mcHash materiosContext ctx
 
 {-# INLINABLE wrap #-}
-wrap :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinUnit
+wrap
+  :: BuiltinData
+  -> BuiltinData
+  -> BuiltinData
+  -> BuiltinUnit
 wrap d r ctx =
   check
     ( mkValidator
@@ -134,5 +201,7 @@ wrap d r ctx =
     )
 
 compiledValidator
-  :: CompiledCode (BuiltinData -> BuiltinData -> BuiltinData -> BuiltinUnit)
-compiledValidator = $$(compile [|| wrap ||])
+  :: CompiledCode
+       (BuiltinData -> BuiltinData -> BuiltinData -> BuiltinUnit)
+compiledValidator =
+  $$(compile [|| wrap ||])

@@ -2,7 +2,7 @@
 {-# LANGUAGE DerivingStrategies  #-}
 {-# LANGUAGE NoImplicitPrelude   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TemplateHaskell    #-}
 {-# LANGUAGE ViewPatterns        #-}
 
 module Types
@@ -52,14 +52,17 @@ data BeaconTarget = BeaconTarget
 
 PlutusTx.unstableMakeIsData ''BeaconTarget
 
--- | One registry UTxO per round (light bridge).
+-- | One registry UTxO per PRE-RICH round.
+-- The relayer is the trusted publisher/attestor for the external
+-- Materios receipt represented by mcHash + materiosContext.
 data BeaconRegistryDatum = BeaconRegistryDatum
   { brRound            :: Integer
   , brTarget           :: BeaconTarget
   , brStatus           :: BeaconStatus
   , brBeaconValue      :: BuiltinByteString
-  , brMcHash           :: BuiltinByteString
+  , brMcHash            :: BuiltinByteString
   , brMateriosContext  :: BuiltinByteString
+  , brRelayerPkh       :: PubKeyHash
   }
 
 PlutusTx.unstableMakeIsData ''BeaconRegistryDatum
@@ -84,6 +87,7 @@ data PrizeDatum = PrizeDatum
   , pdResult           :: BuiltinByteString
   , pdPrizeTier        :: Integer
   , pdBeaconTarget     :: BeaconTarget
+
   -- | Must match registry for this round after publish.
   , pdBeaconStatus     :: BeaconStatus
   , pdBeaconValue      :: BuiltinByteString

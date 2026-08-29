@@ -1,244 +1,330 @@
-# Commit-reveal and result secrecy design
+Commit-reveal and result secrecy design
+1. Core rule
 
-## 1. Core rule
+No ticket result may be known or chosen by the player before the reveal step.
 
-No ticket result may be known before the reveal step. The system must use a commit-reveal pattern so that the outcome is hidden at purchase time and only becomes verifiable when the user reveals the ticket.
+The system MUST use a commit-reveal pattern in which:
 
-This rule is mandatory for fairness, anti-front-running, and auditability.
+the player commits to a secret before reveal;
+the Beacon used for the round is fixed according to the configured Beacon trust model;
+the player later reveals the secret;
+the validator deterministically derives the ticket seed;
+the validator deterministically generates the symbols;
+the validator derives the prize tier and payout.
 
-## 2. Why this matters
+The player does not submit the symbol vector as authoritative game input.
 
-Without commit-reveal:
-- a browser or server can infer or alter the outcome before the user interacts with the ticket
-- a player can claim a result that was not truly generated at the time of purchase
-- the receipt trail cannot be independently verified
-- treasury and prize-pool logic become vulnerable to manipulation or timing attacks
+2. Security model
 
-## 3. Required sequence
+The result is a function of:
 
-1. Ticket purchase
-   - wallet signs the purchase transaction
-   - ticket is minted or created with a unique `ticketId`
-   - the system generates a hidden commitment derived from a secret seed and the game parameters
+Beacon
++
+playerSecret
++
+ticket identity
++
+ticket nonce
++
+game version
++
+other committed game parameters
 
-2. Commitment registration
-   - the commitment hash is stored in the ticket metadata or in the Materios receipt layer
-   - it is not possible to derive the final outcome from the commitment alone
 
-3. Reveal / scratch step
-   - user reveals the ticket
-   - the system exposes the seed, symbol vector, and final result
-   - the reveal payload is bound to the original commitment
+Conceptually:
 
-4. Receipt generation
-   - the receipt includes: `ticketId`, `commitmentHash`, `revealSeed`, `symbolVector`, `result`, `gameVersion`, `attestationId`
-   - this receipt is anchored to Materios and optionally to Cardano metadata
+validated Beacon
+       +
+playerSecret
+       +
+ticket parameters
+       ↓
+ticketSeed
+       ↓
+symbolsSeed
+       ↓
+symbols
+       ↓
+tier
+       ↓
+payout
 
-5. Claim step
-   - claim on-chain only accepts the revealed result if it matches the signed receipt and the stored commitment
-   - payout occurs only if the receipt is valid and the result matches the prize logic
 
-## 4. Commitment model
+The frontend may reproduce this computation, but the validator is authoritative.
 
-The system should use a deterministic hash approach similar to:
+3. Required sequence
+3.1 Ticket purchase
 
-`commitment = sha256(ticketId || seed || gameVersion || salt || ticketNonce)`
+The player:
 
-Where:
-- `ticketId` is unique per ticket
-- `seed` is generated at purchase time or reveal time and kept secret until reveal
-- `gameVersion` prevents cross-version mismatch
-- `salt` prevents precomputation or brute-force correlation
-- `ticketNonce` binds the result to the exact minted ticket
+receives or purchases a unique ticket NFT;
+generates a player secret;
+computes the player commitment;
+submits the commitment before revealing the secret.
 
-The commitment must be recorded before the reveal becomes visible.
+The commitment binds the secret to the exact ticket and game parameters.
 
-## 5. Reveal payload
+3.2 Commitment registration
 
-The reveal payload should contain enough data to reproduce the outcome and verify the commitment. A minimal structure:
+The commitment is stored in the ticket state/datum.
 
-```json
-{
-  "ticketId": "...",
-  "gameVersion": "v1",
-  "seed": "...",
-  "salt": "...",
-  "symbolVector": ["A", "B", "C", "D"],
-  "result": {
-    "matchType": "three-of-a-kind",
-    "prizeTier": 3,
-    "payoutMultiplier": 2
-  },
-  "commitmentHash": "..."
-}
-```
+The commitment MUST be sufficient for the validator to establish that the revealed player secret is the same secret committed before reveal.
 
-The verifier recomputes the hash from the reveal payload and compares it with the recorded commitment.
+The system MUST NOT rely on a backend database as the authoritative commitment store.
 
-## 6. Integration with Materios
+3.3 Beacon finalization
 
-Materios should act as the receipt and attestation layer, not as the payout authority.
+Before the ticket can be revealed, the applicable Beacon for the target round must be available.
 
-Recommended flow:
+The Beacon is validated according to one of:
 
-- frontend or client creates ticket commitment
-- ticket receipt is submitted to Materios
-- Materios stores the receipt along with a `receiptId`
-- the ticket reveal is published to Materios as a signed receipt
-- the resulting Merkle root or batch root is anchored to Cardano periodically
+B1: authorized publisher;
+B2: proof-verified anchor;
+B3: existing authenticated L1 anchor.
 
-This allows the system to keep user data private while keeping a public audit trail.
+B3 is the preferred long-term architecture.
 
-## 7. Integration with Cardano on-chain claim
+The important distinction is:
 
-The on-chain claim must validate only the previously attested result.
+BeaconRegistry
 
-The claim witness should include:
-- `ticketId`
-- `receiptId`
-- `commitmentHash`
-- `revealHash`
-- optionally a Merkle proof if the receipt is batched
 
-The validator should reject any claim where:
-- the receipt is missing
-- the reveal does not match the commitment
-- the result is not consistent with the originally defined prize rules
-- the claim is attempted before the reveal is recorded
+does not automatically authenticate an external value.
 
-## 8. Security requirements
+It only provides a game-facing view of a Beacon whose provenance must already be defined by the selected trust model.
 
-- No result shall be visible before the reveal action.
-- The commitment must be stored before the reveal is accepted.
-- The reveal payload must be immutably linked to the ticket.
-- The on-chain claim must verify the receipt, not just a browser-side flag.
-- Any admin or relayer must never be able to rewrite the reveal without a valid receipt.
+4. Reveal
 
-## 9. Acceptance criteria
+The player reveals:
 
-The design is accepted when all of the following are true:
+playerSecret
 
-- a user cannot know the result before the reveal step
-- the reveal can be independently recomputed and verified
-- Materios receipt and Cardano claim are bound by the same ticket identity
-- claim validation rejects forged or stale reveal payloads
-- the frontend can only display the result after the reveal receipt is verified
 
-## 10. Exact ticket lifecycle and proof flow
+The validator then:
 
-The logical flow must be:
+verifies the player commitment;
+reads the correct Beacon reference input;
+derives the ticket seed;
+derives the symbols seed;
+generates the symbol vector;
+classifies the generated vector;
+derives the payout amount;
+stores the resulting state.
 
-1. Purchase / mint
-   - generate `ticketId`, `purchaseTxHash`, `gameVersion`, `salt`
-   - generate a hidden `seed` or `revealSecret`
-   - compute `commitmentHash = sha256(ticketId || seed || salt || gameVersion || ticketNonce)`
-   - store `commitmentHash` in the ticket metadata and in the first Materios receipt record
+The player does NOT submit:
 
-2. Pre-reveal state
-   - the browser may display the ticket as "pending reveal"
-   - it may never reveal the winning pattern or prize tier before the reveal step
-   - no claim can be executed because the reveal receipt is still absent
+symbols
+tier
+payout
 
-3. Reveal
-   - user reveals `seed`, `salt`, and the generated symbol vector
-   - recompute the hash locally and verify it matches the stored commitment
-   - build reveal payload: `ticketId`, `seed`, `salt`, `gameVersion`, `symbolVector`, `result`, `commitmentHash`
-   - sign the reveal payload or store a witness proof in the receipt layer
 
-4. Materios attestation
-   - create a receipt object with fields:
-     - `ticketId`
-     - `purchaseTxHash`
-     - `commitmentHash`
-     - `revealHash`
-     - `symbolVector`
-     - `result`
-     - `gameVersion`
-     - `timestamp`
-     - `receiptId`
-     - `batchRoot` if batched
-   - submit it to Materios and keep `receiptId` as the canonical attestation reference
+as authoritative values.
 
-5. Orynq proof audit
-   - Orynq receives the attestation or a derived proof bundle for process trace / auditability
-   - store a tamper-evident proof of the reveal process, not the economic payout itself
-   - the proof may be used for dispute resolution and verification, but not as the actual payout authority
+Those values are derived by the validator.
 
-6. On-chain claim
-   - claim witness includes: `ticketId`, `receiptId`, `commitmentHash`, `revealHash`, optional Merkle path
-   - validator checks that:
-     - `commitmentHash` existed for the ticket
-     - `revealHash` matches the stored commitment
-     - the result is consistent with the prize logic
-     - the receipt was previously attested by Materios
-   - only if all conditions match is the payout allowed
+5. Deterministic result derivation
 
-## 11. Recommended data schema
+The result pipeline is:
 
-### Purchase / commitment record
+Beacon
+  │
+  ├── round / target binding
+  │
+  ▼
+deriveTicketSeed(...)
+  │
+  ▼
+deriveSymbolsSeed(...)
+  │
+  ▼
+generateSymbols(...)
+  │
+  ▼
+classifyTier(...)
+  │
+  ▼
+prizeAmountForTier(...)
 
-```json
-{
-  "ticketId": "tx-abc-001",
-  "purchaseTxHash": "...",
-  "gameVersion": "v1",
-  "salt": "...",
-  "seedHash": "...",
-  "commitmentHash": "...",
-  "createdAt": "2026-08-21T12:00:00Z"
-}
-```
 
-### Reveal record
+The TypeScript frontend may reproduce this exact pipeline for UX and verification.
 
-```json
-{
-  "ticketId": "tx-abc-001",
-  "gameVersion": "v1",
-  "seed": "...",
-  "salt": "...",
-  "symbolVector": ["A", "B", "C", "D"],
-  "result": {
-    "matchType": "three-of-a-kind",
-    "prizeTier": 3,
-    "payoutMultiplier": 2
-  },
-  "commitmentHash": "...",
-  "revealHash": "..."
-}
-```
+The Plutus implementation remains the security authority.
 
-### Materios receipt"
+6. Why the player cannot choose the symbols
 
-```json
-{
-  "receiptId": "mat-xyz-42",
-  "ticketId": "tx-abc-001",
-  "purchaseTxHash": "...",
-  "commitmentHash": "...",
-  "revealHash": "...",
-  "symbolVector": ["A", "B", "C", "D"],
-  "result": {
-    "matchType": "three-of-a-kind",
-    "prizeTier": 3,
-    "payoutMultiplier": 2
-  },
-  "timestamp": "2026-08-21T12:05:00Z",
-  "batchRoot": "..."
-}
-```
+A reveal transaction contains the player secret, not the final symbol vector.
 
-This schema keeps the sensitive reveal data bound to the ticket identity while preserving a verifiable, public audit trail.
+Therefore a player cannot submit:
 
-## 12. Practical implication for PRE-RICH
+[5,5,5,5,5,5]
 
-For PRE-RICH, the correct shape is:
 
-- purchase ticket on Cardano
-- create commitment and store it externally
-- reveal outcome via Materios receipt
-- verify against stored commitment
-- attach Orynq proof for tamper-evident audit
-- only then allow prize claim or payout logic to proceed on-chain
+or another preferred vector and ask the validator to accept it.
 
-This preserves fairness, privacy, and auditability without giving the frontend any unchecked authority over the result.
+The validator independently calculates:
+
+expectedSymbols = generateSymbols(symbolsSeed)
+
+
+and derives the tier from expectedSymbols.
+
+This property is mandatory for fairness.
+
+7. Beacon timing and grinding
+
+Beacon timing is part of the fairness model.
+
+The system must ensure that the Beacon used for a ticket is associated with a deterministic target/round.
+
+The Beacon source may still have its own trust or grinding assumptions.
+
+In particular:
+
+B1 does not eliminate publisher bias;
+B2 does not eliminate bias unless the proof system constrains the source;
+B3 does not eliminate bias merely because the value is stored on Cardano.
+
+B3 is trustless only when the L1 anchor itself enforces the relevant external fact.
+
+Block-production or source-selection grinding is a separate property and is not automatically eliminated by B1, B2 or B3.
+
+8. Materios and Orynq
+
+Materios and Orynq may provide:
+
+receipts;
+observations;
+attestations;
+process traces;
+batch roots;
+audit evidence.
+
+They are not automatically payout authorities.
+
+If an external observation is required for Beacon generation, the observation must be bound to Cardano through a verifiable L1 anchor before it is treated as a trustless game input.
+
+The architecture therefore distinguishes:
+
+External observation
+        ≠
+L1-authenticated fact
+
+9. B3 L1-anchor model
+
+The target B3 model is:
+
+Materios / Partner Chain / external source
+                 │
+                 ▼
+          authenticated fact
+                 │
+                 ▼
+        Cardano L1 anchor UTxO
+                 │
+       validator / policy
+       enforces its validity
+                 │
+                 ▼
+          BeaconRegistry
+                 │
+                 ▼
+          PrizeValidator
+
+
+Examples of potentially valid anchors include:
+
+a bridge/state UTxO whose datum contains the relevant reference and hash and whose validator enforces its update rules;
+a Beacon NFT whose minting policy constrains the encoded round and value;
+a proof-verified state anchor.
+
+A normal metadata field saying:
+
+mcHash = X
+
+
+is not sufficient by itself.
+
+10. Claim
+
+The claim is accepted only after the on-chain ticket state has reached a valid revealed state.
+
+The claim validator verifies:
+
+the ticket is in the correct state;
+the current ticket owner authorizes the claim;
+the ticket NFT is burned;
+the payout asset and amount satisfy the on-chain prize state;
+the script state is closed correctly.
+
+The claim does not trust a browser-provided prize value.
+
+11. Receipt layer
+
+A receipt may contain:
+
+ticketId
+commitmentHash
+playerSecret / reveal reference
+gameVersion
+Beacon reference
+Beacon value
+derived symbols
+derived tier
+derived payout
+revealHash
+receiptId
+
+
+However, the receipt is an audit artifact unless it is itself anchored by an L1 object whose validity rules are enforced on-chain.
+
+The receipt must never be treated as authoritative merely because it was produced by a backend.
+
+12. Acceptance criteria
+
+The design is accepted when:
+
+the player cannot choose the symbol vector;
+the player cannot alter the committed secret;
+the Beacon is fixed according to an explicit trust model;
+the Beacon cannot be substituted by an arbitrary backend value;
+symbols are deterministically derived on-chain;
+tier is deterministically derived on-chain;
+payout is deterministically derived on-chain;
+claim depends on the validated on-chain revealed state;
+frontend/backend infrastructure cannot authorize an invalid payout.
+
+For B3 specifically, acceptance additionally requires:
+
+a real L1 anchor has been identified;
+the anchor's validator/policy has been reviewed;
+the anchor proves the fact PRE-RICH actually needs;
+the BeaconRegistry consumes the canonical anchor rather than arbitrary publisher input.
+13. Trust-model status
+B1
+
+Status: immediate/shippable interim architecture.
+
+Trust assumption:
+
+authorized publisher
+
+B2
+
+Status: optional future architecture.
+
+Trust assumption:
+
+correct cryptographic proof verification
+
+B3
+
+Status: target architecture.
+
+Trust assumption:
+
+correct L1 anchor validator/policy
+
+
+B3 does not remove the trust model. It moves the trust boundary into the L1 anchor.
+
+That distinction must remain explicit in all PRE-RICH documentation.

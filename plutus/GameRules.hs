@@ -18,6 +18,10 @@ module GameRules
 import PlutusTx
 import PlutusTx.Prelude
 
+-- ============================================================
+-- Prize table
+-- ============================================================
+
 data PrizeTable = PrizeTable
   { ptTier1 :: Integer
   , ptTier2 :: Integer
@@ -57,6 +61,10 @@ prizeAmountForTier table tier priceUsdm =
     then 0
     else (baseForTier table tier * priceUsdm) `divide` 2
 
+-- ============================================================
+-- Symbol generation
+-- ============================================================
+
 {-# INLINABLE countSym #-}
 countSym :: BuiltinByteString -> Integer -> Integer -> Integer
 countSym bs sym i =
@@ -65,8 +73,10 @@ countSym bs sym i =
     else
       let c = indexByteString bs i
           n = if c == sym then 1 else 0
-      in  n + countSym bs sym (i + 1)
+      in n + countSym bs sym (i + 1)
 
+-- | Returns the highest symbol (5..1) appearing at least three times.
+--   Returns 0 when there is no winning tier.
 {-# INLINABLE classifyTier #-}
 classifyTier :: BuiltinByteString -> Integer
 classifyTier bs =
@@ -81,15 +91,35 @@ classifyTier bs =
           then sym
           else go (sym - 1)
 
--- | Six symbols in 1..5, fully determined by symbolsSeed.
+-- | Generates exactly six symbols in the range 1..5.
+--
+-- Each position is derived independently from:
+--
+--   sha2_256( byte(position) || symbolsSeed )
+--
+-- and mapped to 1..5.
+--
+-- The result is therefore completely deterministic from symbolsSeed.
 {-# INLINABLE generateSymbols #-}
 generateSymbols :: BuiltinByteString -> BuiltinByteString
 generateSymbols symbolsSeed = go 0 emptyByteString
   where
-    go i acc
-      | i >= 6 = acc
-      | otherwise =
-          let h   = sha2_256 (appendByteString (consByteString i emptyByteString) symbolsSeed)
-              raw = indexByteString h 0
-              sym = remainder raw 5 + 1
-          in  go (i + 1) (appendByteString acc (consByteString sym emptyByteString))
+    go i acc =
+      if i >= 6
+        then acc
+        else
+          let
+            h =
+              sha2_256
+                (appendByteString
+                  (consByteString i emptyByteString)
+                  symbolsSeed
+                )
+
+            raw = indexByteString h 0
+            sym = remainder raw 5 + 1
+
+          in
+            go
+              (i + 1)
+              (appendByteString acc (consByteString sym emptyByteString))

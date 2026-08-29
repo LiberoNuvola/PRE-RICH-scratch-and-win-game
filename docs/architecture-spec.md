@@ -1,192 +1,430 @@
-# PreRich architecture specification
-
-## 1. Goal
+PreRich architecture specification
+1. Goal
 
 Build a Cardano app where:
-- users connect a wallet,
-- buy or mint a ticket serial NFT,
-- play / reveal the ticket content,
-- claim prizes from on-chain validation,
-- fees accumulate in a treasury and are redistributed automatically.
 
-The architecture must keep secret material out of the browser and keep critical logic on-chain wherever possible.
+users connect a wallet;
+buy or mint a ticket serial NFT;
+commit the player secret before reveal;
+reveal the ticket outcome deterministically on-chain;
+derive symbols and prize tier from cryptographically bound inputs;
+claim prizes from on-chain validation;
+fees accumulate in a treasury and are redistributed automatically;
+external systems such as Materios/Orynq may provide audit data, but critical game logic does not depend on a backend database.
 
-## 2. Core components
+The architecture must keep secret material out of the browser and keep critical game and payout logic on-chain wherever possible.
 
-### 2.1 Frontend (browser / Vite + TypeScript)
+The system must distinguish between:
+
+L1-verifiable facts — facts represented by Cardano UTxOs, datums, native assets, policies or other objects whose validity is enforced by Cardano scripts;
+external observations — information observed or produced by Materios, Orynq or another off-chain system;
+derived game values — values deterministically computed by the on-chain validators from committed inputs.
+
+Only category (1), together with deterministic derivation in category (3), may be treated as trustless game inputs.
+
+2. Core components
+2.1 Frontend
+
+The frontend is responsible for:
+
+wallet connection;
+ticket selection and purchase UX;
+generating and protecting player secret material;
+building and signing user transactions;
+synchronizing ticket state;
+reproducing the on-chain symbol derivation for display;
+claim flow UI;
+balance display and notifications.
+
+The frontend is not an authority for:
+
+ticket result;
+symbol vector;
+prize tier;
+prize amount;
+Beacon value;
+L1 anchor authenticity.
+
+The frontend may reproduce deterministic computations for display, but the on-chain validator remains authoritative.
+
+2.2 Proxy / backend read layer
+
+The proxy is a read-only convenience layer.
+
+It may provide:
+
+Cardano chain queries;
+transaction/UTxO discovery;
+rate limiting;
+API-key protection;
+indexing assistance.
+
+The proxy MUST NOT be required for the correctness or security of:
+
+ticket commitments;
+Beacon authenticity;
+symbol generation;
+prize calculation;
+claim authorization.
+
+A malicious or unavailable proxy must at most prevent the frontend from discovering data; it must not allow an invalid result to pass on-chain validation.
+
+3. On-chain components
+3.1 Mint policy / counter
+
 Responsible for:
-- wallet connection
-- ticket selection and purchase UX
-- minting transaction building and signing
-- claim flow UI
-- simple balance display and notifications
+
+serial NFT generation;
+uniqueness enforcement via the counter UTxO;
+exact token-name derivation;
+controlled ticket minting and burning.
 
 Files:
-- `src/main.ts`
-- `src/wallet.ts`
-- `src/claim.ts`
-- `src/tickets.ts`
-- `src/mint.ts`
-- `src/ui.ts`
 
-The frontend must not hold admin keys. It only signs user transactions.
+plutus/MintPolicy.hs
+plutus/CounterValidator.hs
+3.2 Prize validator
 
-### 2.2 Proxy / backend read layer
 Responsible for:
-- hiding Blockfrost project id from the browser
-- read-only access to chain data
-- rate limiting and key validation
 
-Files:
-- `blockfrost-proxy/proxy.js`
-
-The browser must call the proxy, never Blockfrost directly.
-
-### 2.3 On-chain scripts
-
-#### Mint policy / counter
-Responsible for:
-- serial NFT generation
-- uniqueness enforcement via on-chain counter UTxO
-- exact token name derivation from counter value
-
-Files:
-- `plutus/MintPolicy.hs`
-- `plutus/CounterValidator.hs`
-
-#### Prize validator
-Responsible for:
-- validating claim conditions
-- verifying payment asset type and payout rules
-- preventing invalid or forged claims
+ticket state transitions;
+player commitment verification;
+Beacon reference validation;
+deterministic ticket-seed derivation;
+deterministic symbol generation;
+prize-tier calculation;
+prize-amount calculation;
+ticket ownership verification;
+ticket burn during claim;
+payout validation.
 
 File:
-- `plutus/PrizeValidator.hs`
 
-#### Treasury validator
-Responsible for:
-- collecting fees from ticket purchases and mint flows
-- enforcing threshold logic
-- allowing distribution when funds reach a configured threshold
+plutus/PrizeValidator.hs
 
-File:
-- `plutus/Treasury.hs`
+The PrizeValidator MUST NOT accept user-supplied symbols or prize tiers as authoritative inputs.
 
-#### Prize-pool validator
-Responsible for:
-- allocating prize UTxOs according to weighted randomization or deterministic index selection
-- ensuring prizes are spent only under valid conditions
+The result MUST be derived from committed and validated inputs.
 
-Planned file:
-- `plutus/PrizePool.hs`
+3.3 Beacon Registry
 
-## 3. Fee flow
+The BeaconRegistry is a deliberately small verification layer.
 
-### 3.1 Sources of funds
-Ticket purchase fees plus optional mint fees accumulate in the treasury address.
+Its purpose is to expose the Beacon value associated with a game round through a Cardano UTxO that can be supplied as a reference input to the PrizeValidator.
 
-### 3.2 Routing
-When treasury balance reaches a configured threshold, the distributor relayer triggers a transaction that routes funds to:
-- prize pool
-- staking pool or reserve
-- relayer reward
-- business reserve / operating fund
-- advertising inventory / slot funding budget
+The Registry MUST NOT be described as an independent oracle.
 
-Suggested default split:
-- 50% prize pool
-- 30% staking pool
-- 19.5% reserve
-- 0.5% relayer reward
+There are three possible trust models:
 
-This should be encoded in the treasury datum and reviewed by admin before production use.
+B1 — authorized publisher
 
-### 3.3 Ad-slot monetization
-Ad slots are a secondary revenue stream and should be treated as a time-based lease, not a manual admin tool.
+A configured publisher or N-of-M authority is allowed to create/update the Beacon Registry.
 
-The accepted pricing model is:
-- base price quoted in USDM
-- official packages: 1h, 6h, 1d, 3d
-- final payment accepted in USDM, ADA, or PRE if the equivalent USDM value meets the required threshold
-- slot expiry is deterministic from the selected package duration
-- once the lease expires, the slot returns to availability automatically
+Security depends on the configured authority.
 
-This keeps the sponsorship channel simple, auditable, and fully compatible with the treasury flow.
+B2 — proof-verified anchor
 
-## 4. Relayer / distributor
-Responsible for:
-- polling treasury state
-- detecting threshold reach
-- constructing and submitting distribution tx
-- optionally handling swaps if multi-asset distribution is required
+The Beacon anchor is accepted only when the Registry update contains a cryptographic proof that is verified by the on-chain script.
 
-Files:
-- `relayer/relayer.js`
-- `relayer/README.md`
+Security depends on the proof system and the correctness of the verification script.
 
-The relayer is not a privileged admin key holder; it is an automated facilitator receiving a small reward for processing the tx.
+B3 — L1 anchor
 
-## 5. Administrative responsibility
-Admin responsibilities:
-- deploy scripts to preprod/mainnet
-- initialize treasury and prize pool UTxOs
-- set thresholds and distribution params
-- maintain operational wallet keys offline
-- monitor relayer performance and treasury health
+The preferred long-term architecture is for the BeaconRegistry to read an existing Cardano L1 object whose validity is already enforced by another Cardano script/policy.
 
-The admin must not live inside browser code.
+Examples include:
 
-## 6. Human automation split
+a Partner Chain / bridge UTxO containing {ref, mcHash, ...};
+a datum created by a known bridge or state-transition validator;
+an NFT minted by a policy that cryptographically constrains the associated Beacon data;
+an existing L1 anchor whose update rules are consensus-grade or proof-based.
 
-### Fully automated
-- wallet connection and signing
-- balance refresh
-- tx build and submit for user actions
-- treasury threshold detection and distribution trigger by relayer
-- serial NFT counter progression on-chain
+In B3 the BeaconRegistry does not independently prove the external fact.
 
-### Requires human action
-- initial script deployment
-- initial treasury/prize-pool creation
-- governance parameter setup
-- relayer configuration and monitoring
-- emergency stop / operational rollback
+Instead:
 
-## 7. Security rules
-- no Blockfrost secret in frontend code
-- no admin keys in browser build
-- use proxy for read-only chain queries
-- validate every user-supplied address / asset / datum before tx construction
-- run full review before preprod launch
-- no ticket result may be visible before the reveal step
-- commit-reveal must be used so the result is hidden until the reveal is validated
-- the claim path must verify the receipt and the commitment, not just a browser-side value
+External system / source
+        ↓
+L1 Anchor
+        ↓
+Cardano validator / policy proves anchor validity
+        ↓
+BeaconRegistry reads reference input
+        ↓
+PrizeValidator reads Beacon
 
-## 7.1 Commit-reveal and result secrecy
-The ticket lifecycle must enforce a strict commit-reveal pattern:
 
-1. the ticket mint or purchase records a unique `ticketId` and a hidden commitment hash
-2. the final symbol vector and result stay hidden until the reveal step
-3. the reveal payload must match the original commitment before any claim is accepted
-4. the attestation is recorded in a receipt layer such as Materios or equivalent audit storage
-5. the on-chain claim validator only accepts payout if the revealed outcome matches the receipt-backed commitment
+The Registry therefore becomes a deterministic adapter between an already-authenticated L1 object and the game state.
 
-This is the protection against early knowledge of the result, front-running, and forged payout attempts.
+4. Beacon trust model
 
-## 8. Review gate before preprod
-The following must be complete before entering `preprod` tests:
-- [ ] UI migration and asset cleanup complete
-- [ ] prize-pool validator implemented
-- [ ] treasury validator implemented and reviewed
-- [ ] relayer reference implemented and reviewed
-- [ ] admin scripts and governance params defined
-- [ ] commit-reveal and result secrecy rules documented and reviewed
-- [ ] Materios receipt integration defined
-- [ ] build/test scripts operational
-- [ ] proxy hardened and documented
-- [ ] runbook written and reviewed
+The following distinction is mandatory.
 
-Only after this gate passes do we start preprod tests.
+A value such as:
 
-## 9. Next milestone
-The next milestone should be closing the remaining implementation tasks, then executing the review gate, and only then moving to end-to-end preprod testing.
+mcHash
+mainchainRef
+materiosContext
+
+
+being present in a Cardano datum does NOT by itself prove that the value is authentic.
+
+Cardano validators can observe:
+
+transaction inputs;
+transaction outputs;
+reference inputs;
+datums;
+minting/burning;
+signatories;
+validity interval.
+
+They do not automatically observe arbitrary historical chain state or external protocol state.
+
+Therefore:
+
+"mcHash is present in a datum"
+
+
+is not equivalent to:
+
+"mcHash is proven to be the correct external value"
+
+
+The second statement requires an on-chain rule that makes the first statement unavoidable.
+
+5. B3 target architecture
+
+The target architecture is:
+
+             External / Partner Chain state
+                         │
+                         │
+                 authenticated anchor
+                         │
+                         ▼
+              ┌─────────────────────┐
+              │     Cardano L1      │
+              │     Anchor UTxO     │
+              │                     │
+              │ ref / mcHash / ...  │
+              └──────────┬──────────┘
+                         │
+                  reference input
+                         │
+                         ▼
+              ┌─────────────────────┐
+              │   BeaconRegistry    │
+              │                     │
+              │ read + validate     │
+              │ required fields     │
+              └──────────┬──────────┘
+                         │
+                    beaconValue
+                         │
+                         ▼
+              ┌─────────────────────┐
+              │   PrizeValidator    │
+              │                     │
+              │ ticket seed         │
+              │ symbols             │
+              │ tier                │
+              │ payout              │
+              └─────────────────────┘
+
+
+The BeaconRegistry MUST NOT silently substitute a backend-provided value when the L1 anchor is absent.
+
+6. Anchor requirements
+
+A future B3 anchor SHOULD have:
+
+deterministic identity;
+deterministic round/reference;
+explicit Beacon or source fields;
+a unique NFT or equivalent identity where practical;
+an on-chain update rule;
+a validator or minting policy that constrains the relationship between the external reference and the stored value;
+replay protection;
+stale-round protection;
+a clearly defined authority or proof mechanism.
+
+The anchor MUST make clear:
+
+what fact it represents
+who/what is authorized to create it
+how updates are authorized
+how the round is identified
+how the Beacon is derived
+
+7. Materios / Orynq integration
+
+Materios and Orynq are not automatically trust anchors.
+
+They may provide:
+
+observations;
+receipts;
+attestations;
+process traces;
+audit records;
+batch roots;
+external metadata.
+
+Such information becomes trustless for PRE-RICH only when a Cardano L1 object binds the relevant fact under an enforceable on-chain rule.
+
+An ordinary metadata entry such as:
+
+mcHash = X
+
+
+is therefore treated as an observation, not as a cryptographic proof of X.
+
+Likewise, an L1 bridge anchor is not automatically trustless merely because it exists on Cardano. Its own validator/policy must enforce the relevant fact.
+
+8. Randomness and fairness
+
+The game result is derived from:
+
+Beacon
++
+playerSecret
++
+ticket identity / nonce
++
+game version
+
+
+The result pipeline is:
+
+validated Beacon
+        ↓
+deriveTicketSeed
+        ↓
+deriveSymbolsSeed
+        ↓
+generateSymbols
+        ↓
+classifyTier
+        ↓
+prizeAmountForTier
+
+
+The player MUST NOT be able to provide the symbol vector, tier or payout as authoritative reveal data.
+
+The frontend may reproduce the derivation for display only.
+
+9. Prize pool
+
+The legacy PrizePool component MUST NOT be treated as an independent source of ticket randomness unless explicitly required by the current game design.
+
+The preferred v1.01+ model is:
+
+Beacon = game randomness input
+PrizePool = funding / prize liquidity mechanism
+
+
+If PrizePool remains responsible for random prize allocation in a future version, its relationship with the Beacon must be specified explicitly and there must be one authoritative randomness path.
+
+10. Treasury
+
+The Treasury is responsible for:
+
+collecting ticket fees;
+enforcing configured threshold logic;
+distributing funds;
+preserving configured allocation percentages;
+rewarding the distribution relayer where applicable.
+
+The Treasury does not determine ticket outcomes.
+
+11. Relayer
+
+The relayer is an automated facilitator.
+
+It may:
+
+discover eligible transactions;
+construct transactions;
+submit transactions;
+monitor treasury state;
+publish operationally required data.
+
+It MUST NOT have authority to:
+
+choose ticket symbols;
+choose prize tiers;
+modify player commitments;
+override Beacon validation;
+modify payout amounts;
+bypass the on-chain state machine.
+12. Security principles
+
+The system MUST enforce:
+
+no secret material in server-side admin infrastructure unless operationally required;
+no admin keys in browser code;
+no backend authority over game results;
+player commitment before reveal;
+deterministic on-chain symbol generation;
+deterministic on-chain prize calculation;
+current NFT owner verification at claim;
+ticket burn on successful claim;
+exact continuing-state transitions;
+Beacon validation through an explicit trust model;
+no assumption that arbitrary metadata constitutes cryptographic proof.
+13. Deployment roadmap
+v1.01
+
+Current implementation:
+
+player commitment;
+deterministic Beacon-derived game seed;
+deterministic symbol generation;
+deterministic prize calculation;
+Beacon Registry;
+reference-input based Beacon consumption.
+v1.02 — immediate hardening
+
+Implement/define:
+
+B1 authorized Registry publishing;
+canonical Registry identity;
+exact round/target matching;
+exact reference-input selection;
+stale Beacon rejection.
+
+B1 is an interim operational solution, not the final trustless architecture.
+
+B3 — target architecture
+
+In parallel:
+
+identify the real L1 object currently produced by Materios / Orynq / Flux;
+determine exactly what fact it proves;
+verify the validator/policy that makes that fact enforceable;
+define the canonical anchor UTxO;
+modify BeaconRegistry to consume only that anchor.
+
+B3 MUST NOT be claimed as trustless until the anchor's own validation rules have been independently verified.
+
+14. Preprod gate
+
+Before preprod:
+
+ ticket minting reviewed;
+ PrizeValidator reviewed;
+ deterministic symbol generation tested;
+ payout derivation tested;
+ B1 Registry authorization defined;
+ canonical Registry identity defined;
+ L1 anchor discovery completed;
+ B3 trust assumptions documented;
+ Materios/Orynq role documented;
+ TS ↔ Plutus golden vectors implemented;
+ treasury reviewed;
+ relayer reviewed;
+ operational runbook updated;
+ adversarial Beacon tests completed.
+
+B3 MUST NOT be marked complete merely because an anchor UTxO exists. The anchor's creation/update rules must also be verified.
