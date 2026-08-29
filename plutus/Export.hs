@@ -14,6 +14,7 @@ import           System.Directory       (createDirectoryIfMissing)
 import           PlutusLedgerApi.Common (serialiseCompiledCode)
 import           PlutusTx.Code          (CompiledCode)
 
+import qualified BeaconRegistry
 import qualified CounterValidator
 import qualified MintPolicy
 import qualified PrizePool
@@ -44,9 +45,11 @@ main = do
     "PreRich Treasury validator"
     (compiledCborHex Treasury.compiledValidator)
 
+  -- Factory: ScriptHash (BeaconRegistry) -> PrizeTable -> script
+  -- Apply both parameters OFF-CHAIN after registry is known.
   writeScriptJson
     "out/prizeValidatorFactory.plutus.json"
-    "PreRich Prize validator factory (apply PrizeTable off-chain)"
+    "PreRich Prize validator factory (apply registry ScriptHash, then PrizeTable off-chain)"
     (compiledCborHex PrizeValidator.compiledValidatorFactory)
 
   writeScriptJson
@@ -56,7 +59,7 @@ main = do
 
   writeScriptJson
     "out/prizePool.plutus.json"
-    "PreRich PrizePool validator"
+    "PreRich PrizePool validator (legacy migration)"
     (compiledCborHex PrizePool.compiledValidator)
 
   writeScriptJson
@@ -64,4 +67,9 @@ main = do
     "PreRich Mint policy factory (apply ScriptHash, PubKeyHash, Integer off-chain)"
     (compiledCborHex MintPolicy.compiledPolicyFactory)
 
-  putStrLn "Done. File JSON in plutus/out/"
+  writeScriptJson
+    "out/beaconRegistry.plutus.json"
+    "PreRich BeaconRegistry validator (light bridge, one UTxO per round)"
+    (compiledCborHex BeaconRegistry.compiledValidator)
+
+  putStrLn "Done. JSON scripts in plutus/out/"

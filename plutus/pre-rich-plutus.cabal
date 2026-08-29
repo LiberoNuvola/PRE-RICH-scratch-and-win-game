@@ -7,7 +7,9 @@ library
     hs-source-dirs:     .
     exposed-modules:
         Types
+        Beacon
         GameRules
+        BeaconRegistry
         CounterValidator
         MintPolicy
         PrizePool
@@ -33,7 +35,9 @@ executable export-scripts
     main-is:            Export.hs
     other-modules:
         Types
+        Beacon
         GameRules
+        BeaconRegistry
         CounterValidator
         MintPolicy
         PrizePool

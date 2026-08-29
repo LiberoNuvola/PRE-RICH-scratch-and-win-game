@@ -12,6 +12,7 @@ module GameRules
   , classifyTier
   , prizeAmountForTier
   , defaultPrizeTable
+  , generateSymbols
   ) where
 
 import PlutusTx
@@ -64,7 +65,7 @@ countSym bs sym i =
     else
       let c = indexByteString bs i
           n = if c == sym then 1 else 0
-      in n + countSym bs sym (i + 1)
+      in  n + countSym bs sym (i + 1)
 
 {-# INLINABLE classifyTier #-}
 classifyTier :: BuiltinByteString -> Integer
@@ -76,7 +77,19 @@ classifyTier bs =
     go sym =
       if sym <= 0
         then 0
-        else
-          if countSym bs sym 0 >= 3
-            then sym
-            else go (sym - 1)
+        else if countSym bs sym 0 >= 3
+          then sym
+          else go (sym - 1)
+
+-- | Six symbols in 1..5, fully determined by symbolsSeed.
+{-# INLINABLE generateSymbols #-}
+generateSymbols :: BuiltinByteString -> BuiltinByteString
+generateSymbols symbolsSeed = go 0 emptyByteString
+  where
+    go i acc
+      | i >= 6 = acc
+      | otherwise =
+          let h   = sha2_256 (appendByteString (consByteString i emptyByteString) symbolsSeed)
+              raw = indexByteString h 0
+              sym = remainder raw 5 + 1
+          in  go (i + 1) (appendByteString acc (consByteString sym emptyByteString))

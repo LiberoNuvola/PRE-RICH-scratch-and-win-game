@@ -7,6 +7,10 @@
 
 module Types
   ( PrizeStatus (..)
+  , BeaconStatus (..)
+  , BeaconTarget (..)
+  , BeaconRegistryDatum (..)
+  , BeaconRegistryAction (..)
   , PrizeDatum (..)
   , PrizeAction (..)
   , PrizePoolDatum (..)
@@ -29,31 +33,72 @@ instance Eq PrizeStatus where
 
 PlutusTx.unstableMakeIsData ''PrizeStatus
 
+data BeaconStatus = BeaconPending | BeaconReady
+
+instance Eq BeaconStatus where
+  {-# INLINABLE (==) #-}
+  BeaconPending == BeaconPending = True
+  BeaconReady   == BeaconReady   = True
+  _             == _             = False
+
+PlutusTx.unstableMakeIsData ''BeaconStatus
+
+data BeaconTarget = BeaconTarget
+  { btNetworkId    :: Integer
+  , btRound        :: Integer
+  , btMainchainRef :: BuiltinByteString
+  , btVersion      :: BuiltinByteString
+  }
+
+PlutusTx.unstableMakeIsData ''BeaconTarget
+
+-- | One registry UTxO per round (light bridge).
+data BeaconRegistryDatum = BeaconRegistryDatum
+  { brRound            :: Integer
+  , brTarget           :: BeaconTarget
+  , brStatus           :: BeaconStatus
+  , brBeaconValue      :: BuiltinByteString
+  , brMcHash           :: BuiltinByteString
+  , brMateriosContext  :: BuiltinByteString
+  }
+
+PlutusTx.unstableMakeIsData ''BeaconRegistryDatum
+
+data BeaconRegistryAction
+  = RegistryPublish BuiltinByteString BuiltinByteString
+
+PlutusTx.unstableMakeIsData ''BeaconRegistryAction
+
 data PrizeDatum = PrizeDatum
-  { pdTicketPolicy  :: BuiltinByteString
-  , pdTicketName    :: BuiltinByteString
-  , pdPlayerSeed    :: BuiltinByteString
-  , pdOpCommitment  :: BuiltinByteString
-  , pdPriceUsdm     :: Integer
-  , pdCommitment    :: BuiltinByteString
-  , pdGameVersion   :: BuiltinByteString
-  , pdTicketNonce   :: Integer
-  , pdPrizeAmount   :: Integer
-  , pdPaymentPolicy :: BuiltinByteString
-  , pdPaymentName   :: BuiltinByteString
-  , pdStatus        :: PrizeStatus
-  , pdRevealHash    :: BuiltinByteString
-  , pdResult        :: BuiltinByteString
-  , pdPrizeTier     :: Integer
+  { pdTicketPolicy     :: BuiltinByteString
+  , pdTicketName       :: BuiltinByteString
+  , pdPlayerCommitment :: BuiltinByteString
+  , pdPriceUsdm        :: Integer
+  , pdCommitment       :: BuiltinByteString
+  , pdGameVersion      :: BuiltinByteString
+  , pdTicketNonce      :: Integer
+  , pdPrizeAmount      :: Integer
+  , pdPaymentPolicy    :: BuiltinByteString
+  , pdPaymentName      :: BuiltinByteString
+  , pdStatus           :: PrizeStatus
+  , pdResult           :: BuiltinByteString
+  , pdPrizeTier        :: Integer
+  , pdBeaconTarget     :: BeaconTarget
+  -- | Must match registry for this round after publish.
+  , pdBeaconStatus     :: BeaconStatus
+  , pdBeaconValue      :: BuiltinByteString
+  , pdMcHash           :: BuiltinByteString
+  , pdMateriosContext  :: BuiltinByteString
   }
 
 PlutusTx.unstableMakeIsData ''PrizeDatum
 
+-- | SyncBeacon: copy R from registry reference input (no redeemer entropy).
+--   Reveal playerSecret
+--   Claim
 data PrizeAction
-  = Reveal
-      BuiltinByteString
-      BuiltinByteString
-      BuiltinByteString
+  = SyncBeacon
+  | Reveal BuiltinByteString
   | Claim
 
 PlutusTx.unstableMakeIsData ''PrizeAction
@@ -71,10 +116,7 @@ PlutusTx.unstableMakeIsData ''PrizePoolDatum
 data PrizePoolAction
   = ClaimIndex Integer
   | Refill Integer
-  | RevealSeed
-      BuiltinByteString
-      BuiltinByteString
-      BuiltinByteString
+  | RevealSeed BuiltinByteString BuiltinByteString BuiltinByteString
 
 PlutusTx.unstableMakeIsData ''PrizePoolAction
 
