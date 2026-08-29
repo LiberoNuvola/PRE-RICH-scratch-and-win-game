@@ -1,41 +1,80 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DerivingStrategies  #-}
 {-# LANGUAGE NoImplicitPrelude   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE ViewPatterns        #-}
 
 module Types
-  ( PrizeDatum (..)
+  ( PrizeStatus (..)
+  , PrizeDatum (..)
+  , PrizeAction (..)
   , PrizePoolDatum (..)
   , PrizePoolAction (..)
   , TreasuryDatum (..)
   , TreasuryAction (..)
   ) where
 
-import           PlutusLedgerApi.V2
-import           PlutusTx
-import           PlutusTx.Prelude
+import PlutusLedgerApi.V2
+import PlutusTx
+import PlutusTx.Prelude
+
+data PrizeStatus = Pending | Revealed
+
+instance Eq PrizeStatus where
+  {-# INLINABLE (==) #-}
+  Pending  == Pending  = True
+  Revealed == Revealed = True
+  _        == _        = False
+
+PlutusTx.unstableMakeIsData ''PrizeStatus
 
 data PrizeDatum = PrizeDatum
-  { pdPrizeAmount   :: Integer
-  , pdTicketPolicy  :: BuiltinByteString
+  { pdTicketPolicy  :: BuiltinByteString
   , pdTicketName    :: BuiltinByteString
+  , pdPlayerSeed    :: BuiltinByteString
+  , pdOpCommitment  :: BuiltinByteString
+  , pdPriceUsdm     :: Integer
+  , pdCommitment    :: BuiltinByteString
+  , pdGameVersion   :: BuiltinByteString
+  , pdTicketNonce   :: Integer
+  , pdPrizeAmount   :: Integer
   , pdPaymentPolicy :: BuiltinByteString
   , pdPaymentName   :: BuiltinByteString
-  , pdClaimantPkh   :: PubKeyHash
+  , pdStatus        :: PrizeStatus
+  , pdRevealHash    :: BuiltinByteString
+  , pdResult        :: BuiltinByteString
+  , pdPrizeTier     :: Integer
   }
 
 PlutusTx.unstableMakeIsData ''PrizeDatum
 
+data PrizeAction
+  = Reveal
+      BuiltinByteString
+      BuiltinByteString
+      BuiltinByteString
+  | Claim
+
+PlutusTx.unstableMakeIsData ''PrizeAction
+
 data PrizePoolDatum = PrizePoolDatum
-  { ppPoolSize  :: Integer
-  , ppNextIndex :: Integer
-  , ppSeed      :: BuiltinByteString
+  { ppPoolSize       :: Integer
+  , ppNextIndex      :: Integer
+  , ppSeed           :: BuiltinByteString
+  , ppNextCommitment :: BuiltinByteString
+  , ppRound          :: Integer
   }
 
 PlutusTx.unstableMakeIsData ''PrizePoolDatum
 
-data PrizePoolAction = Claim Integer | Refill Integer
+data PrizePoolAction
+  = ClaimIndex Integer
+  | Refill Integer
+  | RevealSeed
+      BuiltinByteString
+      BuiltinByteString
+      BuiltinByteString
 
 PlutusTx.unstableMakeIsData ''PrizePoolAction
 

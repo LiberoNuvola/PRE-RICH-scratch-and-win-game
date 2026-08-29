@@ -45,9 +45,9 @@ main = do
     (compiledCborHex Treasury.compiledValidator)
 
   writeScriptJson
-    "out/prizeValidator.plutus.json"
-    "PreRich Prize validator"
-    (compiledCborHex PrizeValidator.compiledValidator)
+    "out/prizeValidatorFactory.plutus.json"
+    "PreRich Prize validator factory (apply PrizeTable off-chain)"
+    (compiledCborHex PrizeValidator.compiledValidatorFactory)
 
   writeScriptJson
     "out/counterValidator.plutus.json"

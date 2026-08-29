@@ -7,6 +7,7 @@ library
     hs-source-dirs:     .
     exposed-modules:
         Types
+        GameRules
         CounterValidator
         MintPolicy
         PrizePool
@@ -32,6 +33,7 @@ executable export-scripts
     main-is:            Export.hs
     other-modules:
         Types
+        GameRules
         CounterValidator
         MintPolicy
         PrizePool
