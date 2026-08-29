@@ -27,7 +27,7 @@ integerToBuiltinByteString n
           let q     = divide x 10
               r     = remainder x 10
               digit = consByteString (48 + r) emptyByteString
-          in  go q (appendByteString digit acc)
+          in  go q (consByteString (48 + r) emptyByteString `appendByteString` acc)
 
 {-# INLINABLE tokenNameFromInteger #-}
 tokenNameFromInteger :: Integer -> TokenName
@@ -45,6 +45,7 @@ readIntegerDatum info out =
       case fromBuiltinData (getDatum d) of
         Just (n :: Integer) -> Just n
         Nothing             -> Nothing
+
     OutputDatumHash dh ->
       case findDatum dh info of
         Just d ->
@@ -52,7 +53,9 @@ readIntegerDatum info out =
             Just (n :: Integer) -> Just n
             Nothing             -> Nothing
         Nothing -> Nothing
-    NoOutputDatum -> Nothing
+
+    NoOutputDatum ->
+      Nothing
 
 {-# INLINABLE listLength #-}
 listLength :: [a] -> Integer
@@ -90,59 +93,127 @@ lovelacePaidTo _ [] = 0
 lovelacePaidTo pkh (out:rest) =
   case addressCredential (txOutAddress out) of
     PubKeyCredential outPkh
-      | outPkh == pkh -> valueLovelace (txOutValue out) + lovelacePaidTo pkh rest
-    _ -> lovelacePaidTo pkh rest
+      | outPkh == pkh ->
+          valueLovelace (txOutValue out)
+            + lovelacePaidTo pkh rest
+    _ ->
+      lovelacePaidTo pkh rest
 
 {-# INLINABLE ownMintEntries #-}
-ownMintEntries :: CurrencySymbol -> Value -> [(CurrencySymbol, TokenName, Integer)]
+ownMintEntries
+  :: CurrencySymbol
+  -> Value
+  -> [(CurrencySymbol, TokenName, Integer)]
 ownMintEntries ownCs minted = go (flattenValue minted)
   where
     go [] = []
     go (e@(cs, _, _):rest) =
-      if cs == ownCs then e : go rest else go rest
+      if cs == ownCs
+        then e : go rest
+        else go rest
 
-{-# INLINABLE allNegative #-}
-allNegative :: [(CurrencySymbol, TokenName, Integer)] -> Bool
-allNegative [] = True
-allNegative ((_, _, amt):rest) = amt < 0 && allNegative rest
-
-{-# INLINABLE isPureBurn #-}
-isPureBurn :: CurrencySymbol -> Value -> Bool
-isPureBurn ownCs minted =
+-- | A valid burn under this policy must burn exactly one token
+-- belonging to this currency symbol, in quantity -1.
+--
+-- This deliberately rejects:
+--   * burning zero tokens;
+--   * burning multiple token names;
+--   * burning multiple copies;
+--   * burning multiple ticket NFTs in one transaction.
+{-# INLINABLE isExactSingleBurn #-}
+isExactSingleBurn :: CurrencySymbol -> Value -> Bool
+isExactSingleBurn ownCs minted =
   case ownMintEntries ownCs minted of
-    [] -> False
-    xs -> allNegative xs
+    [(cs, _, amt)] ->
+      cs == ownCs && amt == negate 1
+    _ ->
+      False
 
 {-# INLINABLE mintedExactlyOneSerial #-}
-mintedExactlyOneSerial :: CurrencySymbol -> TokenName -> Value -> Bool
+mintedExactlyOneSerial
+  :: CurrencySymbol
+  -> TokenName
+  -> Value
+  -> Bool
 mintedExactlyOneSerial ownCs expectedName minted =
   case ownMintEntries ownCs minted of
-    [(cs, tn, amt)] -> cs == ownCs && tn == expectedName && amt == 1
-    _               -> False
+    [(cs, tn, amt)] ->
+      cs == ownCs
+        && tn == expectedName
+        && amt == 1
+    _ ->
+      False
 
 {-# INLINABLE mkPolicy #-}
-mkPolicy :: ScriptHash -> PubKeyHash -> Integer -> () -> ScriptContext -> Bool
+mkPolicy
+  :: ScriptHash
+  -> PubKeyHash
+  -> Integer
+  -> ()
+  -> ScriptContext
+  -> Bool
 mkPolicy sh salePkh priceLovelace _ ctx
-  | isPureBurn ownCs minted = True
+  | isExactSingleBurn ownCs minted =
+      True
+
   | otherwise =
       case findCounterInputs sh (txInfoInputs info) of
         [txIn] ->
           case readIntegerDatum info (txInInfoResolved txIn) of
-            Nothing -> traceError "invalid or missing counter datum"
+            Nothing ->
+              traceError "invalid or missing counter datum"
+
             Just n ->
-              let expectedName    = tokenNameFromInteger n
-                  mintOk          = mintedExactlyOneSerial ownCs expectedName minted
-                  counterAdvanced = hasNextCounterOutput sh n info
-                  paidEnough      = lovelacePaidTo salePkh (txInfoOutputs info) >= priceLovelace
-              in  traceIfFalse "expected exactly one serial NFT with correct name" mintOk
-                    && traceIfFalse "counter UTxO was not advanced to n+1" counterAdvanced
-                    && traceIfFalse "sale payment insufficient" paidEnough
-        [] -> traceError "counter input not found"
-        _  -> traceError "expected exactly one counter input"
+              let
+                expectedName =
+                  tokenNameFromInteger n
+
+                mintOk =
+                  mintedExactlyOneSerial
+                    ownCs
+                    expectedName
+                    minted
+
+                counterAdvanced =
+                  hasNextCounterOutput
+                    sh
+                    n
+                    info
+
+                paidEnough =
+                  lovelacePaidTo
+                    salePkh
+                    (txInfoOutputs info)
+                    >= priceLovelace
+
+              in
+                   traceIfFalse
+                     "expected exactly one serial NFT with correct name"
+                     mintOk
+
+                && traceIfFalse
+                     "counter UTxO was not advanced to n+1"
+                     counterAdvanced
+
+                && traceIfFalse
+                     "sale payment insufficient"
+                     paidEnough
+
+        [] ->
+          traceError "counter input not found"
+
+        _ ->
+          traceError "expected exactly one counter input"
+
   where
-    info   = scriptContextTxInfo ctx
-    ownCs  = ownCurrencySymbol ctx
-    minted = txInfoMint info
+    info =
+      scriptContextTxInfo ctx
+
+    ownCs =
+      ownCurrencySymbol ctx
+
+    minted =
+      txInfoMint info
 
 {-# INLINABLE wrap #-}
 wrap
@@ -154,7 +225,10 @@ wrap
   -> BuiltinUnit
 wrap sh pkh price r ctx =
   check
-    ( mkPolicy sh pkh price
+    ( mkPolicy
+        sh
+        pkh
+        price
         (unsafeFromBuiltinData r)
         (unsafeFromBuiltinData ctx)
     )
@@ -168,4 +242,5 @@ compiledPolicyFactory
          -> BuiltinData
          -> BuiltinUnit
        )
-compiledPolicyFactory = $$(compile [|| wrap ||])
+compiledPolicyFactory =
+  $$(compile [|| wrap ||])

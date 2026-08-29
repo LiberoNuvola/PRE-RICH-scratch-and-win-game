@@ -9,6 +9,7 @@ module Types
   ( PrizeStatus (..)
   , BeaconStatus (..)
   , BeaconTarget (..)
+  , GameRoundCommitment (..)
   , BeaconRegistryDatum (..)
   , BeaconRegistryAction (..)
   , PrizeDatum (..)
@@ -52,17 +53,39 @@ data BeaconTarget = BeaconTarget
 
 PlutusTx.unstableMakeIsData ''BeaconTarget
 
+-- | Canonical commitment binding a PRE-RICH game round to its
+-- configuration and protocol version.
+--
+-- This is deliberately NOT a randomness source and does NOT contain
+-- Materios data. It is an integrity/binding primitive used to establish
+-- the canonical identity of a game round before beacon derivation.
+data GameRoundCommitment = GameRoundCommitment
+  { grcGameId          :: BuiltinByteString
+  , grcRound           :: Integer
+  , grcConfigHash      :: BuiltinByteString
+  , grcProtocolVersion :: BuiltinByteString
+  , grcCommitmentHash  :: BuiltinByteString
+  }
+
+PlutusTx.unstableMakeIsData ''GameRoundCommitment
+
 -- | One registry UTxO per PRE-RICH round.
--- The relayer is the trusted publisher/attestor for the external
+-- The relayer is currently the trusted publisher/attestor for the external
 -- Materios receipt represented by mcHash + materiosContext.
+--
+-- IMPORTANT:
+-- This remains the current registry model for now. The GameRoundCommitment
+-- is introduced first as a separate primitive. The registry will be changed
+-- in a later step so that external Materios data cannot define the canonical
+-- round/beacon input without an authenticated Cardano anchor.
 data BeaconRegistryDatum = BeaconRegistryDatum
-  { brRound            :: Integer
-  , brTarget           :: BeaconTarget
-  , brStatus           :: BeaconStatus
-  , brBeaconValue      :: BuiltinByteString
-  , brMcHash            :: BuiltinByteString
-  , brMateriosContext  :: BuiltinByteString
-  , brRelayerPkh       :: PubKeyHash
+  { brRound           :: Integer
+  , brTarget          :: BeaconTarget
+  , brStatus          :: BeaconStatus
+  , brBeaconValue     :: BuiltinByteString
+  , brMcHash           :: BuiltinByteString
+  , brMateriosContext :: BuiltinByteString
+  , brRelayerPkh      :: PubKeyHash
   }
 
 PlutusTx.unstableMakeIsData ''BeaconRegistryDatum
