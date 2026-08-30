@@ -1,224 +1,1101 @@
 /**
- * Ticket lifecycle off-chain aligned with PrizeValidator:
- *   SyncBeacon (ref registry) → Reveal(playerSecret) → Claim
- * Symbols are never sent: derived on-chain and mirrored here for UX only.
+ * PRE-RICH prize flow:
+ *
+ *   Mint
+ *     ↓
+ *   Pending / BeaconPending
+ *     ↓
+ *   SyncBeacon
+ *     ↓
+ *   Pending / BeaconReady
+ *     ↓
+ *   Reveal(playerSecret)
+ *     ↓
+ *   Revealed
+ *     ↓
+ *   Claim
+ *     ↓
+ *   burn ticket + payout
+ *
+ * IMPORTANT:
+ * - PrizeValidator è parametrizzato con:
+ *     registry ScriptHash + PrizeTable
+ * - MintPolicy è parametrizzata con:
+ *     counterHash + prizeHash + registryHash + salePkh + priceLovelace
+ * - Tutti i dati necessari a Reveal vengono letti dal PrizeDatum.
  */
 
+import { Constr, Data, type Script, type UTxO } from 'lucid-cardano'
+
+import wallet from './wallet'
+
 import {
-  playerCommitment,
+  buildScriptsFromLucid,
+} from './loadValidator'
+
+import {
+  SALE_ADDRESS,
+  TICKET_PRICE_LOVELACE,
+} from './config'
+
+import {
+  deriveBeacon,
   deriveTicketSeed,
   deriveSymbolsSeed,
-  ticketCommitment,
-  encodeBeaconTarget,
-  randomPlayerSecret,
-  toHex,
-  type BeaconTarget,
-  sha256,
   field,
+  fromHex,
+  playerCommitment,
+  sha256,
+  toHex,
 } from './beacon'
+
 import {
-  generateSymbols,
   classifyTier,
-  prizeAmountForTier,
   defaultPrizeTable,
+  generateSymbols,
+  prizeAmountForTier,
   type PrizeTable,
 } from './gameRules'
-import { prizeValidator, mintPolicyScript } from './loadValidator'
 
-export type TicketSecrets = {
-  playerSecret: Uint8Array
-  ticketNonce: number
-  roundId: number
-  gameVersion: Uint8Array
-  priceUsdm: number
-  target: BeaconTarget
+// ---------------------------------------------------------------------------
+// Plutus Data helpers
+// ---------------------------------------------------------------------------
+
+type AnyData = Data
+
+function constr(index: number, fields: AnyData[] = []): Data {
+  return new Constr<Data>(index, fields) as unknown as Data
 }
 
-export async function createPlayerTicketMaterial(t: TicketSecrets, ticketId: Uint8Array) {
-  const pCommit = await playerCommitment(t.roundId, t.ticketNonce, t.playerSecret)
-  const targetEnc = encodeBeaconTarget(t.target)
-  const commit = await ticketCommitment(
-    ticketId,
-    pCommit,
-    t.gameVersion,
-    t.ticketNonce,
-    t.priceUsdm,
-    targetEnc
-  )
-  return {
-    playerSecret: t.playerSecret,
-    playerSecretHex: toHex(t.playerSecret),
-    playerCommitment: pCommit,
-    playerCommitmentHex: toHex(pCommit),
-    ticketCommitment: commit,
-    ticketCommitmentHex: toHex(commit),
+function bytesData(hex: string): Data {
+  return hex.toLowerCase()
+}
+
+function emptyConstr(index: number): Data {
+  return constr(index, [])
+}
+
+// ---------------------------------------------------------------------------
+// Generic datum decoding helpers
+// ---------------------------------------------------------------------------
+
+type DataFields = {
+  fields: unknown[]
+}
+
+function asFields(value: unknown): unknown[] | null {
+  if (!value || typeof value !== 'object') return null
+
+  const candidate = value as Partial<DataFields>
+
+  return Array.isArray(candidate.fields)
+    ? candidate.fields
+    : null
+}
+
+function parseData(raw: unknown): unknown {
+  if (raw == null) return null
+
+  if (typeof raw === 'string') {
+    try {
+      return Data.from(raw)
+    } catch {
+      return null
+    }
+  }
+
+  if (
+    typeof raw === 'object' &&
+    Array.isArray((raw as { fields?: unknown }).fields)
+  ) {
+    return raw
+  }
+
+  return raw
+}
+
+function constrIndex(value: unknown): number | null {
+  if (!value || typeof value !== 'object') return null
+
+  const v = value as {
+    index?: unknown
+    constr?: unknown
+  }
+
+  if (v.index !== undefined) {
+    const index = Number(v.index)
+    return Number.isInteger(index) ? index : null
+  }
+
+  if (v.constr !== undefined) {
+    const index = Number(v.constr)
+    return Number.isInteger(index) ? index : null
+  }
+
+  return null
+}
+
+function bytesField(value: unknown): string | null {
+  if (typeof value === 'string') return value
+
+  if (
+    value &&
+    typeof value === 'object' &&
+    typeof (value as { bytes?: unknown }).bytes === 'string'
+  ) {
+    return (value as { bytes: string }).bytes
+  }
+
+  return null
+}
+
+function integerField(value: unknown): number | null {
+  if (typeof value === 'number') return value
+
+  if (typeof value === 'bigint') {
+    return Number(value)
+  }
+
+  if (
+    value &&
+    typeof value === 'object' &&
+    'int' in value
+  ) {
+    return Number(
+      (value as { int: number | bigint | string }).int,
+    )
+  }
+
+  return null
+}
+
+// ---------------------------------------------------------------------------
+// UTxO value
+// ---------------------------------------------------------------------------
+
+function utxoAssets(utxo: UTxO): Record<string, bigint> {
+  if (utxo.assets) {
+    return utxo.assets
+  }
+
+  const legacy = (utxo as unknown as {
+    value?: Record<string, bigint>
+  }).value
+
+  if (legacy) {
+    return legacy
+  }
+
+  throw new Error('UTxO senza assets')
+}
+
+// ---------------------------------------------------------------------------
+// Redeemers
+// ---------------------------------------------------------------------------
+
+/**
+ * PrizeAction:
+ *
+ * SyncBeacon = constructor 0
+ * Reveal     = constructor 1 [playerSecret]
+ * Claim      = constructor 2
+ */
+function syncBeaconRedeemer(): Data {
+  return emptyConstr(0)
+}
+
+function revealRedeemer(playerSecretHex: string): Data {
+  return constr(1, [
+    bytesData(playerSecretHex),
+  ])
+}
+
+function claimRedeemer(): Data {
+  return emptyConstr(2)
+}
+
+// ---------------------------------------------------------------------------
+// PrizeDatum
+// ---------------------------------------------------------------------------
+
+/**
+ * PrizeDatum in Types.hs:
+ *
+ *  0  pdTicketPolicy
+ *  1  pdTicketName
+ *  2  pdPlayerCommitment
+ *  3  pdPriceUsdm
+ *  4  pdCommitment
+ *  5  pdGameVersion
+ *  6  pdTicketNonce
+ *  7  pdPrizeAmount
+ *  8  pdPaymentPolicy
+ *  9  pdPaymentName
+ * 10  pdStatus
+ * 11  pdResult
+ * 12  pdPrizeTier
+ * 13  pdBeaconTarget
+ * 14  pdBeaconStatus
+ * 15  pdBeaconValue
+ * 16  pdMcHash
+ * 17  pdMateriosContext
+ */
+
+type PrizeState = {
+  fields: unknown[]
+}
+
+function decodePrizeDatum(utxo: UTxO): PrizeState | null {
+  try {
+    const raw = utxo.datum
+
+    if (raw == null) {
+      return null
+    }
+
+    const parsed = parseData(raw)
+    const fields = asFields(parsed)
+
+    if (!fields || fields.length !== 18) {
+      return null
+    }
+
+    return { fields }
+  } catch {
+    return null
   }
 }
 
-export function newWalletSecret(): Uint8Array {
-  return randomPlayerSecret(32)
-}
-
-/** Preview outcome after beacon is known (UX only; chain re-derives). */
-export async function previewOutcome(
-  roundId: number,
-  ticketNonce: number,
-  playerSecret: Uint8Array,
-  beacon: Uint8Array,
-  gameVersion: Uint8Array,
-  priceUsdm: number,
-  table: PrizeTable = defaultPrizeTable
-) {
-  const finalSeed = await deriveTicketSeed(
-    roundId,
-    ticketNonce,
-    playerSecret,
-    beacon,
-    gameVersion
+function datumFromFields(fields: unknown[]): Data {
+  return constr(
+    0,
+    fields as Data[],
   )
-  const symbolsSeed = await deriveSymbolsSeed(finalSeed)
-  const symbols = await generateSymbols(symbolsSeed)
-  const tier = classifyTier(symbols)
-  const amount = prizeAmountForTier(table, tier, priceUsdm)
-  const digest = await sha256(symbolsSeed)
-  const result = await sha256(
-    // resultBinding on-chain: field(digest)||field(symbols)
-    (() => {
-      const a = field(digest)
-      const b = field(symbols)
-      const o = new Uint8Array(a.length + b.length)
-      o.set(a, 0)
-      o.set(b, a.length)
-      return o
-    })()
-  )
-  return { symbols, tier, amount, resultHex: toHex(result) }
 }
 
-export type SyncParams = {
-  lucid: any
-  prizeScriptAddress: string
-  prizeUtxo: any
-  registryUtxo: any // reference input
-  /** Redeemer for SyncBeacon (e.g. Constr index) */
-  syncRedeemer: any
-  buildSyncedDatum: (prev: any, registry: any) => any
+// ---------------------------------------------------------------------------
+// Prize UTxO lookup
+// ---------------------------------------------------------------------------
+
+export async function findPrizeUtxo(
+  lucid: any,
+  prizeAddress: string,
+  ticketPolicyId: string,
+  ticketAssetNameHex: string,
+): Promise<UTxO | null> {
+  const utxos = await lucid.utxosAt(prizeAddress)
+
+  for (const utxo of utxos) {
+    const datum = decodePrizeDatum(utxo)
+
+    if (!datum) continue
+
+    const policy = bytesField(datum.fields[0])
+    const name = bytesField(datum.fields[1])
+
+    if (
+      policy === ticketPolicyId &&
+      name === ticketAssetNameHex
+    ) {
+      return utxo
+    }
+  }
+
+  return null
 }
 
-export async function syncTicketBeacon(p: SyncParams): Promise<string> {
-  const tx = await p.lucid
-    .newTx()
-    .collectFrom([p.prizeUtxo], p.syncRedeemer)
-    .attachSpendingValidator(prizeValidator)
-    .readFrom([p.registryUtxo])
-    .payToContract(
-      p.prizeScriptAddress,
-      { inline: p.buildSyncedDatum(p.prizeUtxo.datum, p.registryUtxo.datum) },
-      p.prizeUtxo.assets
+// ---------------------------------------------------------------------------
+// Ticket lookup
+// ---------------------------------------------------------------------------
+
+export async function findTicketUtxoInWallet(
+  lucid: any,
+  ticketPolicyId: string,
+  ticketAssetNameHex: string,
+): Promise<UTxO | null> {
+  const unit =
+    ticketPolicyId + ticketAssetNameHex
+
+  const utxos = await lucid.wallet.getUtxos()
+
+  for (const utxo of utxos) {
+    const assets = utxo.assets
+
+    if (assets && assets[unit] === 1n) {
+      return utxo
+    }
+  }
+
+  return null
+}
+
+// ---------------------------------------------------------------------------
+// BeaconTarget
+// ---------------------------------------------------------------------------
+
+type ClientBeaconTarget = {
+  networkId: number
+  round: number
+  mainchainRef: Uint8Array
+  version: Uint8Array
+}
+
+function parseBeaconTarget(
+  value: unknown,
+): ClientBeaconTarget {
+  const fields = asFields(value)
+
+  if (!fields || fields.length !== 4) {
+    throw new Error(
+      'pdBeaconTarget non decodificabile',
     )
-    .complete()
+  }
 
-  const signed = await p.lucid.signTx(tx)
-  return p.lucid.submitTx(signed)
-}
+  const networkId = integerField(fields[0])
+  const round = integerField(fields[1])
+  const mainchainRefHex = bytesField(fields[2])
+  const versionHex = bytesField(fields[3])
 
-export type RevealParams = {
-  lucid: any
-  prizeScriptAddress: string
-  prizeUtxo: any
-  playerSecret: Uint8Array
-  revealRedeemer: (secret: Uint8Array) => any
-  buildRevealedDatum: (prev: any, outcome: { result: Uint8Array; tier: number; amount: number }) => any
-  // for local preview / datum build
-  roundId: number
-  ticketNonce: number
-  beacon: Uint8Array
-  gameVersion: Uint8Array
-  priceUsdm: number
-  table?: PrizeTable
-}
-
-export async function revealTicket(p: RevealParams): Promise<string> {
-  const table = p.table ?? defaultPrizeTable
-  const preview = await previewOutcome(
-    p.roundId,
-    p.ticketNonce,
-    p.playerSecret,
-    p.beacon,
-    p.gameVersion,
-    p.priceUsdm,
-    table
-  )
-
-  const tx = await p.lucid
-    .newTx()
-    .collectFrom([p.prizeUtxo], p.revealRedeemer(p.playerSecret))
-    .attachSpendingValidator(prizeValidator)
-    .payToContract(
-      p.prizeScriptAddress,
-      {
-        inline: p.buildRevealedDatum(p.prizeUtxo.datum, {
-          result: await (async () => {
-            const finalSeed = await deriveTicketSeed(
-              p.roundId,
-              p.ticketNonce,
-              p.playerSecret,
-              p.beacon,
-              p.gameVersion
-            )
-            const symbolsSeed = await deriveSymbolsSeed(finalSeed)
-            const symbols = await generateSymbols(symbolsSeed)
-            const digest = await sha256(symbolsSeed)
-            const a = field(digest)
-            const b = field(symbols)
-            const o = new Uint8Array(a.length + b.length)
-            o.set(a, 0)
-            o.set(b, a.length)
-            return sha256(o)
-          })(),
-          tier: preview.tier,
-          amount: preview.amount,
-        }),
-      },
-      p.prizeUtxo.assets
+  if (
+    networkId === null ||
+    round === null ||
+    mainchainRefHex === null ||
+    versionHex === null
+  ) {
+    throw new Error(
+      'pdBeaconTarget contiene campi invalidi',
     )
-    .complete()
+  }
 
-  const signed = await p.lucid.signTx(tx)
-  return p.lucid.submitTx(signed)
+  return {
+    networkId,
+    round,
+    mainchainRef: fromHex(mainchainRefHex),
+    version: fromHex(versionHex),
+  }
 }
 
-export type ClaimParams = {
-  lucid: any
-  prizeUtxo: any
+// ---------------------------------------------------------------------------
+// BeaconRegistry
+// ---------------------------------------------------------------------------
+
+type RegistryState = {
+  fields: unknown[]
+}
+
+function decodeRegistryDatum(
+  utxo: UTxO,
+): RegistryState | null {
+  try {
+    const raw = utxo.datum
+
+    if (raw == null) {
+      return null
+    }
+
+    const parsed = parseData(raw)
+    const fields = asFields(parsed)
+
+    if (!fields || fields.length !== 7) {
+      return null
+    }
+
+    return { fields }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * BeaconRegistryDatum:
+ *
+ * 0 brRound
+ * 1 brTarget
+ * 2 brStatus
+ * 3 brBeaconValue
+ * 4 brMcHash
+ * 5 brMateriosContext
+ * 6 brRelayerPkh
+ *
+ * BeaconStatus:
+ *   BeaconPending = 0
+ *   BeaconReady   = 1
+ */
+function registryRound(
+  datum: RegistryState,
+): number | null {
+  return integerField(datum.fields[0])
+}
+
+function registryStatus(
+  datum: RegistryState,
+): number | null {
+  return constrIndex(datum.fields[2])
+}
+
+function pickRegistryUtxo(
+  utxos: UTxO[],
+  round: number,
+  requiredStatus: number,
+): UTxO {
+  const matches: UTxO[] = []
+
+  for (const utxo of utxos) {
+    const datum = decodeRegistryDatum(utxo)
+
+    if (!datum) continue
+
+    if (
+      registryRound(datum) === round &&
+      registryStatus(datum) === requiredStatus
+    ) {
+      matches.push(utxo)
+    }
+  }
+
+  if (matches.length === 1) {
+    return matches[0]
+  }
+
+  if (matches.length === 0) {
+    throw new Error(
+      `Nessun BeaconRegistry con round=${round} ` +
+      `e status=${requiredStatus}.`,
+    )
+  }
+
+  throw new Error(
+    `Trovati ${matches.length} BeaconRegistry ` +
+    `per round=${round}; atteso esattamente uno.`,
+  )
+}
+
+// ---------------------------------------------------------------------------
+// SyncBeacon
+// ---------------------------------------------------------------------------
+
+export async function syncBeacon(opts: {
+  prizeAddress: string
   ticketPolicyId: string
   ticketAssetNameHex: string
-  claimRedeemer: any
-}
+  registryAddress: string
+  table?: PrizeTable
+}): Promise<string> {
+  const lucid = wallet.getLucid()
 
-export async function claimPrize(p: ClaimParams): Promise<string> {
-  const claimantAddr = await p.lucid.wallet.address()
-  const assetId = p.ticketPolicyId + p.ticketAssetNameHex
-  const myUtxos = await p.lucid.wallet.getUtxos()
-  const ticketUtxo = myUtxos.find((u: any) => u.assets && u.assets[assetId])
-  if (!ticketUtxo) throw new Error('Ticket not in wallet')
+  if (!lucid) {
+    throw new Error('Wallet not connected')
+  }
 
-  const payValue =
-    p.prizeUtxo.assets && Object.keys(p.prizeUtxo.assets).length > 0
-      ? p.prizeUtxo.assets
-      : { lovelace: p.prizeUtxo.assets?.lovelace ?? 1_000_000n }
+  const table =
+    opts.table ?? defaultPrizeTable
 
-  const tx = await p.lucid
+  const scripts = buildScriptsFromLucid(
+    lucid,
+    SALE_ADDRESS,
+    TICKET_PRICE_LOVELACE,
+    table,
+  )
+
+  const prizeUtxo = await findPrizeUtxo(
+    lucid,
+    opts.prizeAddress,
+    opts.ticketPolicyId,
+    opts.ticketAssetNameHex,
+  )
+
+  if (!prizeUtxo) {
+    throw new Error(
+      'Prize UTxO non trovato',
+    )
+  }
+
+  const datum = decodePrizeDatum(prizeUtxo)
+
+  if (!datum) {
+    throw new Error(
+      'PrizeDatum non decodificabile',
+    )
+  }
+
+  // Pending
+  if (constrIndex(datum.fields[10]) !== 0) {
+    throw new Error(
+      'Prize non è Pending',
+    )
+  }
+
+  // BeaconPending
+  if (constrIndex(datum.fields[14]) !== 0) {
+    throw new Error(
+      'Prize non è BeaconPending',
+    )
+  }
+
+  const target = parseBeaconTarget(
+    datum.fields[13],
+  )
+
+  const registryUtxos =
+    await lucid.utxosAt(opts.registryAddress)
+
+  const registryUtxo = pickRegistryUtxo(
+    registryUtxos,
+    target.round,
+    1, // BeaconReady
+  )
+
+  const registryDatum =
+    decodeRegistryDatum(registryUtxo)
+
+  if (!registryDatum) {
+    throw new Error(
+      'BeaconRegistryDatum non decodificabile',
+    )
+  }
+
+  /*
+   * Registry:
+   *
+   * [round, target, status, R, mcHash, context, relayer]
+   */
+  const nextFields = [
+    ...datum.fields,
+  ]
+
+  nextFields[14] = emptyConstr(1)
+  nextFields[15] = registryDatum.fields[3]
+  nextFields[16] = registryDatum.fields[4]
+  nextFields[17] = registryDatum.fields[5]
+
+  const nextDatum =
+    datumFromFields(nextFields)
+
+  const owner =
+    await lucid.wallet.address()
+
+  const tx = await lucid
     .newTx()
-    .collectFrom([p.prizeUtxo], p.claimRedeemer)
-    .attachSpendingValidator(prizeValidator)
-    .collectFrom([ticketUtxo])
-    .mintAssets({ [assetId]: -1n }, p.lucid.Data.void())
-    .attachMintingPolicy(mintPolicyScript)
-    .payToAddress(claimantAddr, payValue)
-    .addSigner(claimantAddr)
+    .collectFrom(
+      [prizeUtxo],
+      syncBeaconRedeemer(),
+    )
+    .attachSpendingValidator(
+      scripts.prizeValidator as Script,
+    )
+    .readFrom([registryUtxo])
+    .payToContract(
+      opts.prizeAddress,
+      {
+        inline: Data.to(nextDatum),
+      },
+      utxoAssets(prizeUtxo),
+    )
+    .addSigner(owner)
     .complete()
 
-  const signed = await p.lucid.signTx(tx)
-  return p.lucid.submitTx(signed)
+  const signed =
+    await lucid.signTx(tx)
+
+  return lucid.submitTx(signed)
+}
+
+// ---------------------------------------------------------------------------
+// Reveal
+// ---------------------------------------------------------------------------
+
+export async function revealPrize(opts: {
+  prizeAddress: string
+  ticketPolicyId: string
+  ticketAssetNameHex: string
+  playerSecretHex: string
+  table?: PrizeTable
+}): Promise<{
+  txHash: string
+  tier: number
+  prizeAmount: number
+  resultHex: string
+}> {
+  const lucid = wallet.getLucid()
+
+  if (!lucid) {
+    throw new Error('Wallet not connected')
+  }
+
+  const secretHex =
+    opts.playerSecretHex.startsWith('0x')
+      ? opts.playerSecretHex.slice(2)
+      : opts.playerSecretHex
+
+  if (!/^[0-9a-fA-F]{64}$/.test(secretHex)) {
+    throw new Error(
+      'playerSecretHex deve essere esattamente 32 byte (64 hex)',
+    )
+  }
+
+  const playerSecret =
+    fromHex(secretHex)
+
+  const table =
+    opts.table ?? defaultPrizeTable
+
+  const scripts =
+    buildScriptsFromLucid(
+      lucid,
+      SALE_ADDRESS,
+      TICKET_PRICE_LOVELACE,
+      table,
+    )
+
+  const prizeUtxo =
+    await findPrizeUtxo(
+      lucid,
+      opts.prizeAddress,
+      opts.ticketPolicyId,
+      opts.ticketAssetNameHex,
+    )
+
+  if (!prizeUtxo) {
+    throw new Error(
+      'Prize UTxO non trovato',
+    )
+  }
+
+  const datum =
+    decodePrizeDatum(prizeUtxo)
+
+  if (!datum) {
+    throw new Error(
+      'PrizeDatum non decodificabile',
+    )
+  }
+
+  // PrizeStatus = Pending
+  if (constrIndex(datum.fields[10]) !== 0) {
+    throw new Error(
+      'Prize non è Pending',
+    )
+  }
+
+  // BeaconStatus = Ready
+  if (constrIndex(datum.fields[14]) !== 1) {
+    throw new Error(
+      'Beacon non Ready: esegui SyncBeacon prima',
+    )
+  }
+
+  const target =
+    parseBeaconTarget(
+      datum.fields[13],
+    )
+
+  const ticketNonce =
+    integerField(datum.fields[6])
+
+  const priceUsdm =
+    integerField(datum.fields[3])
+
+  const gameVersionHex =
+    bytesField(datum.fields[5])
+
+  const beaconValueHex =
+    bytesField(datum.fields[15])
+
+  const mcHashHex =
+    bytesField(datum.fields[16])
+
+  const materiosContextHex =
+    bytesField(datum.fields[17])
+
+  const playerCommitmentHex =
+    bytesField(datum.fields[2])
+
+  const commitmentHex =
+    bytesField(datum.fields[4])
+
+  const ticketNameHex =
+    bytesField(datum.fields[1])
+
+  if (
+    ticketNonce === null ||
+    priceUsdm === null ||
+    !gameVersionHex ||
+    !beaconValueHex ||
+    !mcHashHex ||
+    !materiosContextHex ||
+    !playerCommitmentHex ||
+    !commitmentHex ||
+    !ticketNameHex
+  ) {
+    throw new Error(
+      'PrizeDatum incompleto per Reveal',
+    )
+  }
+
+  const gameVersion =
+    fromHex(gameVersionHex)
+
+  const beaconValue =
+    fromHex(beaconValueHex)
+
+  const mcHash =
+    fromHex(mcHashHex)
+
+  const materiosContext =
+    fromHex(materiosContextHex)
+
+  // ---------------------------------------------------------
+  // 1. Verifica client-side del Beacon
+  // ---------------------------------------------------------
+
+  const expectedBeacon =
+    await deriveBeacon(
+      target.networkId,
+      target.round,
+      target.mainchainRef,
+      mcHash,
+      materiosContext,
+      target.version,
+    )
+
+  if (
+    toHex(expectedBeacon) !==
+    beaconValueHex.toLowerCase()
+  ) {
+    throw new Error(
+      'Beacon mismatch: pdBeaconValue non corrisponde a deriveBeacon(...)',
+    )
+  }
+
+  // ---------------------------------------------------------
+  // 2. Verifica player commitment
+  // ---------------------------------------------------------
+
+  const expectedPlayerCommitment =
+    await playerCommitment(
+      target.round,
+      ticketNonce,
+      playerSecret,
+    )
+
+  if (
+    toHex(expectedPlayerCommitment) !==
+    playerCommitmentHex.toLowerCase()
+  ) {
+    throw new Error(
+      'playerSecret non corrisponde a pdPlayerCommitment',
+    )
+  }
+
+  // ---------------------------------------------------------
+  // 3. Derivazione deterministica del risultato
+  // ---------------------------------------------------------
+
+  const ticketSeed =
+    await deriveTicketSeed(
+      target.round,
+      ticketNonce,
+      playerSecret,
+      beaconValue,
+      gameVersion,
+    )
+
+  const symbolsSeed =
+    await deriveSymbolsSeed(ticketSeed)
+
+  const symbols =
+    await generateSymbols(symbolsSeed)
+
+  if (symbols.length !== 6) {
+    throw new Error(
+      'generateSymbols deve produrre esattamente 6 simboli',
+    )
+  }
+
+  /*
+   * PrizeValidator.hs:
+   *
+   * resultBinding digest symbols =
+   *   sha2_256 (field digest || field symbols)
+   *
+   * dove digest = sha2_256 symbolsSeed
+   */
+  const digest =
+    await sha256(symbolsSeed)
+
+  const expectedResult =
+    await sha256(
+      new Uint8Array([
+        ...field(digest),
+        ...field(symbols),
+      ]),
+    )
+
+  const tier =
+    classifyTier(symbols)
+
+  const prizeAmount =
+    prizeAmountForTier(
+      table,
+      tier,
+      priceUsdm,
+    )
+
+  // ---------------------------------------------------------
+  // 4. Costruzione datum Revealed
+  // ---------------------------------------------------------
+
+  const nextFields = [
+    ...datum.fields,
+  ]
+
+  nextFields[7] =
+    BigInt(prizeAmount)
+
+  nextFields[10] =
+    emptyConstr(1) // Revealed
+
+  nextFields[11] =
+    toHex(expectedResult)
+
+  nextFields[12] =
+    BigInt(tier)
+
+  /*
+   * 13 target
+   * 14 BeaconReady
+   * 15 R
+   * 16 mcHash
+   * 17 MateriosContext
+   *
+   * restano invariati.
+   */
+
+  const nextDatum =
+    datumFromFields(nextFields)
+
+  const owner =
+    await lucid.wallet.address()
+
+  const tx = await lucid
+    .newTx()
+    .collectFrom(
+      [prizeUtxo],
+      revealRedeemer(secretHex),
+    )
+    .attachSpendingValidator(
+      scripts.prizeValidator as Script,
+    )
+    .payToContract(
+      opts.prizeAddress,
+      {
+        inline: Data.to(nextDatum),
+      },
+      utxoAssets(prizeUtxo),
+    )
+    .addSigner(owner)
+    .complete()
+
+  const signed =
+    await lucid.signTx(tx)
+
+  const txHash =
+    await lucid.submitTx(signed)
+
+  return {
+    txHash,
+    tier,
+    prizeAmount,
+    resultHex: toHex(expectedResult),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Claim
+// ---------------------------------------------------------------------------
+
+export async function claimPrize(opts: {
+  prizeAddress: string
+  ticketPolicyId: string
+  ticketAssetNameHex: string
+  priceLovelace?: number
+  table?: PrizeTable
+}): Promise<string> {
+  const lucid = wallet.getLucid()
+
+  if (!lucid) {
+    throw new Error('Wallet not connected')
+  }
+
+  const table =
+    opts.table ?? defaultPrizeTable
+
+  const scripts =
+    buildScriptsFromLucid(
+      lucid,
+      SALE_ADDRESS,
+      opts.priceLovelace ??
+        TICKET_PRICE_LOVELACE,
+      table,
+    )
+
+  const prizeUtxo =
+    await findPrizeUtxo(
+      lucid,
+      opts.prizeAddress,
+      opts.ticketPolicyId,
+      opts.ticketAssetNameHex,
+    )
+
+  if (!prizeUtxo) {
+    throw new Error(
+      'Prize UTxO non trovato',
+    )
+  }
+
+  const ticketUtxo =
+    await findTicketUtxoInWallet(
+      lucid,
+      opts.ticketPolicyId,
+      opts.ticketAssetNameHex,
+    )
+
+  if (!ticketUtxo) {
+    throw new Error(
+      'Ticket NFT non trovato nel wallet',
+    )
+  }
+
+  const datum =
+    decodePrizeDatum(prizeUtxo)
+
+  if (!datum) {
+    throw new Error(
+      'PrizeDatum non decodificabile',
+    )
+  }
+
+  // PrizeStatus = Revealed
+  if (constrIndex(datum.fields[10]) !== 1) {
+    throw new Error(
+      'Prize non ancora Revealed',
+    )
+  }
+
+  const prizeAmount =
+    integerField(datum.fields[7])
+
+  if (
+    prizeAmount === null ||
+    prizeAmount <= 0
+  ) {
+    throw new Error(
+      'PrizeAmount ≤ 0: ticket perdente o payout non valido',
+    )
+  }
+
+  const buyer =
+    await lucid.wallet.address()
+
+  const unit =
+    opts.ticketPolicyId +
+    opts.ticketAssetNameHex
+
+  const paymentPolicy =
+    bytesField(datum.fields[8]) ?? ''
+
+  const paymentName =
+    bytesField(datum.fields[9]) ?? ''
+
+  let payout: Record<string, bigint>
+
+  if (paymentPolicy.length === 0) {
+    payout = {
+      lovelace: BigInt(prizeAmount),
+    }
+  } else {
+    payout = {
+      [paymentPolicy + paymentName]:
+        BigInt(prizeAmount),
+    }
+  }
+
+  /*
+   * Claim on-chain richiede:
+   *
+   * - ticket presente in un input PubKeyCredential
+   * - firma del proprietario
+   * - ticket bruciato esattamente -1
+   * - Prize UTxO chiuso
+   * - payout >= pdPrizeAmount
+   */
+  const tx = await lucid
+    .newTx()
+    .collectFrom(
+      [prizeUtxo],
+      claimRedeemer(),
+    )
+    .attachSpendingValidator(
+      scripts.prizeValidator as Script,
+    )
+    .collectFrom(
+      [ticketUtxo],
+    )
+    .mintAssets(
+      {
+        [unit]: -1n,
+      },
+      Data.void(),
+    )
+    .attachMintingPolicy(
+      scripts.mintPolicy as Script,
+    )
+    .payToAddress(
+      buyer,
+      payout,
+    )
+    .addSigner(buyer)
+    .complete()
+
+  const signed =
+    await lucid.signTx(tx)
+
+  return lucid.submitTx(signed)
+}
+
+// ---------------------------------------------------------------------------
+// Player secret validation
+// ---------------------------------------------------------------------------
+
+export function validatePlayerSecretHex(
+  value: string,
+): Uint8Array {
+  const clean =
+    value.startsWith('0x')
+      ? value.slice(2)
+      : value
+
+  if (
+    clean.length !== 64 ||
+    !/^[0-9a-fA-F]+$/.test(clean)
+  ) {
+    throw new Error(
+      'playerSecretHex deve essere esattamente 32 bytes',
+    )
+  }
+
+  return fromHex(clean)
+}
+
+// ---------------------------------------------------------------------------
+// Default export
+// ---------------------------------------------------------------------------
+
+export default {
+  findPrizeUtxo,
+  findTicketUtxoInWallet,
+  syncBeacon,
+  revealPrize,
+  claimPrize,
+  validatePlayerSecretHex,
 }
