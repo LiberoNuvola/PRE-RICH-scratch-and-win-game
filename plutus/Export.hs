@@ -23,7 +23,10 @@ import qualified Treasury
 
 compiledCborHex :: CompiledCode a -> Text
 compiledCborHex code =
-  TE.decodeUtf8 . B16.encode . SBS.fromShort $ serialiseCompiledCode code
+  TE.decodeUtf8
+    . B16.encode
+    . SBS.fromShort
+    $ serialiseCompiledCode code
 
 writeScriptJson :: FilePath -> Text -> Text -> IO ()
 writeScriptJson path description cborHex = do
@@ -33,6 +36,7 @@ writeScriptJson path description cborHex = do
           , "description" .= description
           , "cborHex"     .= cborHex
           ]
+
   BSL.writeFile path (Aeson.encode env)
   putStrLn ("wrote " <> path)
 
@@ -45,11 +49,12 @@ main = do
     "PreRich Treasury validator"
     (compiledCborHex Treasury.compiledValidator)
 
-  -- Factory: ScriptHash (BeaconRegistry) -> PrizeTable -> script
-  -- Apply both parameters OFF-CHAIN after registry is known.
+  -- Factory:
+  -- ScriptHash (BeaconRegistry) -> PrizeTable -> script.
+  -- Apply both parameters OFF-CHAIN after the registry is known.
   writeScriptJson
     "out/prizeValidatorFactory.plutus.json"
-    "PreRich Prize validator factory (apply registry ScriptHash, then PrizeTable off-chain)"
+    "PreRich Prize validator factory (apply BeaconRegistry ScriptHash, then PrizeTable off-chain)"
     (compiledCborHex PrizeValidator.compiledValidatorFactory)
 
   writeScriptJson
@@ -62,9 +67,18 @@ main = do
     "PreRich PrizePool validator (legacy migration)"
     (compiledCborHex PrizePool.compiledValidator)
 
+  -- Factory:
+  -- CounterValidator Hash
+  -- -> PrizeValidator Hash
+  -- -> BeaconRegistry Hash
+  -- -> sale PubKeyHash
+  -- -> price Integer
+  -- -> script.
+  --
+  -- All five parameters are applied OFF-CHAIN.
   writeScriptJson
     "out/mintPolicyFactory.plutus.json"
-    "PreRich Mint policy factory (apply ScriptHash, PubKeyHash, Integer off-chain)"
+    "PreRich Mint policy factory (apply CounterHash, PrizeValidatorHash, BeaconRegistryHash, PubKeyHash, Integer off-chain)"
     (compiledCborHex MintPolicy.compiledPolicyFactory)
 
   writeScriptJson

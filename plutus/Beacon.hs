@@ -9,6 +9,7 @@ module Beacon
   , gameDomain
   , symbolsDomain
   , gameRoundCommitmentDomain
+  , ticketDomain
   , integerToBytes
   , field
   , fieldInteger
@@ -18,6 +19,8 @@ module Beacon
   , deriveTicketSeed
   , deriveSymbolsSeed
   , encodeBeaconTarget
+  , ticketCommitment
+  , sameTarget
   ) where
 
 import PlutusLedgerApi.V2
@@ -41,7 +44,7 @@ gameDomain = "PRE-RICH/GAME/V1"
 symbolsDomain :: BuiltinByteString
 symbolsDomain = "PRE-RICH/SYMBOLS/V1"
 
--- | Domain separator for the canonical game-round binding.
+-- Domain separator for the canonical game-round binding.
 --
 -- This is intentionally distinct from the Beacon, player and ticket
 -- derivation domains. A GameRoundCommitment is an integrity/binding
@@ -51,23 +54,28 @@ gameRoundCommitmentDomain :: BuiltinByteString
 gameRoundCommitmentDomain =
   "PRE-RICH/GAME-ROUND-COMMITMENT/V1"
 
--- | Canonical encoding:
+{-# INLINABLE ticketDomain #-}
+ticketDomain :: BuiltinByteString
+ticketDomain = "PRE-RICH/TICKET/V2"
+
+-- Canonical encoding:
 -- * ByteString fields are encoded as length-prefixed raw bytes.
 -- * Integer fields are encoded as length-prefixed ASCII decimal.
 --
 -- This encoding MUST match the off-chain implementation exactly.
+
 {-# INLINABLE integerToBytes #-}
 integerToBytes :: Integer -> BuiltinByteString
 integerToBytes n
-  | n < 0 = integerToBytes 0
-  | n == 0 = consByteString 48 emptyByteString
+  | n < 0     = integerToBytes 0
+  | n == 0    = consByteString 48 emptyByteString
   | otherwise = go n emptyByteString
   where
     go x acc
-      | x == 0 = acc
+      | x == 0    = acc
       | otherwise =
-          let q = divide x 10
-              r = remainder x 10
+          let q     = divide x 10
+              r     = remainder x 10
               digit = consByteString (48 + r) emptyByteString
           in go q (appendByteString digit acc)
 
@@ -99,7 +107,7 @@ playerCommitment roundId ticketNonce playerSecret =
           (fieldInteger ticketNonce)
           (field playerSecret))))
 
--- | Canonical GameRoundCommitment hash.
+-- Canonical GameRoundCommitment hash.
 --
 -- Binds:
 -- * game identity
@@ -110,6 +118,7 @@ playerCommitment roundId ticketNonce playerSecret =
 -- It intentionally does NOT contain Materios data and does NOT generate
 -- randomness. It is an integrity/binding primitive used to establish
 -- the canonical identity of a game round before beacon derivation.
+
 {-# INLINABLE deriveGameRoundCommitment #-}
 deriveGameRoundCommitment
   :: BuiltinByteString
@@ -140,8 +149,57 @@ encodeBeaconTarget t =
         (field (btMainchainRef t))
         (field (btVersion t))))
 
--- | Does NOT prove mcHash authenticity.
--- | This function performs deterministic beacon derivation only.
+-- Compares every field of two BeaconTarget values.
+-- Shared by BeaconRegistry, PrizeValidator and MintPolicy.
+
+{-# INLINABLE sameTarget #-}
+sameTarget :: BeaconTarget -> BeaconTarget -> Bool
+sameTarget a b =
+     btNetworkId a == btNetworkId b
+  && btRound a == btRound b
+  && btMainchainRef a == btMainchainRef b
+  && btVersion a == btVersion b
+
+-- Lega l'identità del ticket, commitment del giocatore, versione,
+-- nonce, prezzo e target del beacon in un unico hash.
+--
+-- Questa è l'unica definizione condivisa usata da MintPolicy e
+-- PrizeValidator. Il target è incluso realmente nel digest.
+
+{-# INLINABLE ticketCommitment #-}
+ticketCommitment
+  :: BuiltinByteString
+  -> BuiltinByteString
+  -> BuiltinByteString
+  -> Integer
+  -> Integer
+  -> BuiltinByteString
+  -> BuiltinByteString
+ticketCommitment
+  ticketId
+  playerCommitmentValue
+  gameVersion
+  nonce
+  priceUsdm
+  beaconTargetEnc =
+    sha2_256
+      (appendByteString
+        (field ticketDomain)
+        (appendByteString
+          (field ticketId)
+          (appendByteString
+            (field playerCommitmentValue)
+            (appendByteString
+              (field gameVersion)
+              (appendByteString
+                (field (integerToBytes nonce))
+                (appendByteString
+                  (field (integerToBytes priceUsdm))
+                  (field beaconTargetEnc)))))))
+
+-- Does NOT prove mcHash authenticity.
+-- This function performs deterministic beacon derivation only.
+
 {-# INLINABLE deriveBeacon #-}
 deriveBeacon
   :: Integer
