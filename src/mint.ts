@@ -23,6 +23,23 @@
  *
  * Il playerSecret viene generato lato client e NON viene messo on-chain.
  * Viene conservato dal caller per la successiva fase Reveal.
+ *
+ * FIX (vedi commenti su constr/beaconTargetToData/prizeDatumToData):
+ * la versione precedente chiamava Data.to() su ogni campo prima di
+ * inserirlo nel Constr esterno, e poi di nuovo sull'intero Constr.
+ * Data.to() serializza in CBOR hex finale: chiamarlo sui campi interni
+ * e poi di nuovo sul risultato codifica due volte -- gli Integer
+ * (pdPriceUsdm, pdTicketNonce, pdPrizeAmount, pdPrizeTier) finiscono
+ * incapsulati come bytestring contenenti il CBOR di se stessi invece che
+ * come Integer veri, e pdBeaconTarget (che deve essere una Constr
+ * annidata) finisce come bytestring opaco invece che come struttura
+ * annidata. Il risultato e' un datum che PlutusTx.unstableMakeIsData non
+ * riesce a decodificare come PrizeDatum (fromBuiltinData fallisce sempre),
+ * facendo fallire a cascata SyncBeacon, Reveal, Claim e persino il
+ * controllo che MintPolicy fa sul Prize UTxO appena creato.
+ * Ora si costruisce l'intero albero Constr annidato SENZA mai chiamare
+ * Data.to() sui campi interni, e si chiama Data.to() una sola volta, nel
+ * punto in cui il datum viene davvero allegato alla transazione.
  */
 
 import { Constr, Data, type Script, type UTxO } from 'lucid-cardano'
@@ -37,6 +54,7 @@ import {
 import {
   SALE_ADDRESS,
   TICKET_PRICE_LOVELACE,
+  RELAYER_PKH,
 } from './config'
 
 import {
@@ -69,19 +87,16 @@ const DEFAULT_GAME_VERSION = 'V1'
 const DEFAULT_PRICE_USDM = 2
 
 /**
- * Constr<T> di lucid-cardano richiede esplicitamente il parametro
- * generico nella versione usata dal progetto.
+ * Costruisce un nodo Constr "puro", senza serializzare nulla.
  *
- * I campi di Constr sono Data, quindi convertiamo esplicitamente
- * i valori primitivi con Data.to().
+ * IMPORTANTE: i `fields` qui devono essere valori Data grezzi
+ * (bigint, string-hex, Uint8Array-come-hex-string, o altre Constr
+ * annidate) -- MAI il risultato di Data.to(). La serializzazione a CBOR
+ * hex avviene una sola volta, alla fine, quando l'intera struttura viene
+ * passata a Data.to() nel punto d'uso (es. `inline: Data.to(datum)`).
  */
-function constr(index: number, fields: unknown[] = []): Data {
-  return Data.to(
-    new Constr<Data>(
-      index,
-      fields.map((field) => Data.to(field as any)),
-    ),
-  ) as Data
+function constr(index: number, fields: Data[] = []): Constr<Data> {
+  return new Constr(index, fields)
 }
 
 /**
@@ -103,8 +118,11 @@ function strToHex(value: string): string {
  *   , btMainchainRef
  *   , btVersion
  *   }
+ *
+ * Restituisce una Constr "grezza" (non serializzata): va annidata dentro
+ * la Constr di PrizeDatum cosi' com'e', senza passare da Data.to() prima.
  */
-function beaconTargetToData(target: BeaconTarget): Data {
+function beaconTargetToConstr(target: BeaconTarget): Constr<Data> {
   return constr(0, [
     BigInt(target.networkId),
     BigInt(target.round),
@@ -134,8 +152,12 @@ function beaconTargetToData(target: BeaconTarget): Data {
  * 15  pdBeaconValue
  * 16  pdMcHash
  * 17  pdMateriosContext
+ *
+ * Restituisce una Constr "grezza" (non serializzata). Data.to() va
+ * chiamato una sola volta da chi consuma questa funzione, nel punto in
+ * cui il datum viene davvero scritto sulla transazione.
  */
-function prizeDatumToData(fields: {
+function buildPrizeDatumConstr(fields: {
   ticketPolicyHex: string
   ticketNameHex: string
   playerCommitmentHex: string
@@ -147,7 +169,7 @@ function prizeDatumToData(fields: {
   paymentPolicyHex: string
   paymentNameHex: string
   target: BeaconTarget
-}): Data {
+}): Constr<Data> {
   return constr(0, [
     fields.ticketPolicyHex,
     fields.ticketNameHex,
@@ -160,19 +182,19 @@ function prizeDatumToData(fields: {
     fields.paymentPolicyHex,
     fields.paymentNameHex,
 
-    // PrizeStatus = Pending
+    // PrizeStatus = Pending  (Constr index 0, nessun campo)
     constr(0),
 
-    // pdResult
+    // pdResult (vuoto: non ancora rivelato)
     '',
 
     // pdPrizeTier
     0n,
 
-    // pdBeaconTarget
-    beaconTargetToData(fields.target),
+    // pdBeaconTarget -- Constr annidata, NON serializzata a parte
+    beaconTargetToConstr(fields.target),
 
-    // BeaconStatus = BeaconPending
+    // BeaconStatus = BeaconPending (Constr index 0, nessun campo)
     constr(0),
 
     // pdBeaconValue
@@ -558,6 +580,36 @@ export async function mintSerialNFT(
       roundId,
     )
 
+  // FIX/AGGIUNTA: la creazione della entry Pending non è vincolata da
+  // alcun validator on-chain -- vedi createRound.ts. Verifichiamo qui,
+  // lato client, che il relayer del round trovato sia quello atteso,
+  // prima di legare il ticket a un round potenzialmente contraffatto.
+  if (RELAYER_PKH) {
+    const registryFields = Array.isArray(
+      (registryUtxo.datum as any)?.fields,
+    )
+      ? (registryUtxo.datum as any).fields
+      : null
+
+    const foundRelayerPkh =
+      registryFields?.[6] ?? null
+
+    if (
+      !foundRelayerPkh ||
+      String(foundRelayerPkh).toLowerCase() !==
+        RELAYER_PKH.toLowerCase()
+    ) {
+      throw new Error(
+        `BeaconRegistry per round=${roundId} ha un relayerPkh inatteso ` +
+          `(atteso ${RELAYER_PKH}). Round potenzialmente contraffatto: rifiuto il mint.`,
+      )
+    }
+  } else {
+    console.warn(
+      'RELAYER_PKH non configurato in config.ts: il round trovato non viene verificato.',
+    )
+  }
+
   // ------------------------------------------------------------
   // Player secret / commitments
   // ------------------------------------------------------------
@@ -605,11 +657,11 @@ export async function mintSerialNFT(
     toHex(gameVersion)
 
   // ------------------------------------------------------------
-  // PrizeDatum Pending
+  // PrizeDatum Pending (Constr grezza, non ancora serializzata)
   // ------------------------------------------------------------
 
-  const prizeDatum =
-    prizeDatumToData({
+  const prizeDatumConstr =
+    buildPrizeDatumConstr({
       ticketPolicyHex: ticketPolicyId,
       ticketNameHex: tokenNameHex,
       playerCommitmentHex,
@@ -694,11 +746,12 @@ export async function mintSerialNFT(
     )
 
     // Prize UTxO Pending
+    // Data.to() chiamato UNA sola volta qui, sull'intero albero annidato.
     .payToContract(
       prizeAddress,
       {
         inline:
-          prizeDatum,
+          Data.to(prizeDatumConstr),
       },
       {
         lovelace:

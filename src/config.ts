@@ -33,3 +33,17 @@ export const TICKET_POLICY_ID =
 export const PRE_POLICY_ID =
   '1b29fda97d0fd321398c5b7b3285fdaadd519a0d002932853311f02c'
 export const PRE_ASSET_NAME_HEX = '5052452d52494348'
+
+/**
+ * PubKeyHash (hex, 28 byte) del relayer autorizzato a pubblicare i beacon.
+ *
+ * FIX/AGGIUNTA: la creazione della entry Pending nel BeaconRegistry non è
+ * vincolata da nessun validator on-chain (vedi createRound.ts). Questo
+ * valore serve da controllo di sicurezza lato client: prima di mintare un
+ * ticket, verifichiamo che il round trovato abbia proprio questo relayer,
+ * non uno qualsiasi -- altrimenti un round "Pending" contraffatto con un
+ * relayer diverso potrebbe essere referenziato senza che nessuno se ne
+ * accorga.
+ */
+export const RELAYER_PKH =
+  import.meta.env.VITE_RELAYER_PKH ?? ''
