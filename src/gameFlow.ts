@@ -1,42 +1,25 @@
 /**
  * PRE-RICH prize flow:
  *
- *   Mint
- *     ↓
- *   Pending / BeaconPending
- *     ↓
- *   SyncBeacon
- *     ↓
- *   Pending / BeaconReady
- *     ↓
- *   Reveal(playerSecret)
- *     ↓
- *   Revealed
- *     ↓
- *   Claim
- *     ↓
- *   burn ticket + payout
+ *   Mint → Pending / BeaconPending
+ *     → SyncBeacon → Pending / BeaconReady
+ *     → Reveal → Revealed (payout frozen)
+ *     → Claim → Claimed (NFT kept, no mandatory burn)
  *
- * IMPORTANT:
- * - PrizeValidator è parametrizzato con:
- *     registry ScriptHash + PrizeTable
- * - MintPolicy è parametrizzata con:
- *     counterHash + prizeHash + registryHash + salePkh + priceLovelace
- * - Tutti i dati necessari a Reveal vengono letti dal PrizeDatum.
+ * PrizeStatus: Pending=0, Revealed=1, Claimed=2
+ * PrizeDatum fields 0..19 (18 issuedAt, 19 expiresAt)
+ *
+ * PrizeValidator: registry ScriptHash + PrizeTable
+ * MintPolicy: counterHash + prizeHash + registryHash + salePkh + priceLovelace
  */
 
 import { Constr, Data, type Script, type UTxO } from 'lucid-cardano'
 
 import wallet from './wallet'
 
-import {
-  buildScriptsFromLucid,
-} from './loadValidator'
+import { buildScriptsFromLucid } from './loadValidator'
 
-import {
-  SALE_ADDRESS,
-  TICKET_PRICE_LOVELACE,
-} from './config'
+import { SALE_ADDRESS, TICKET_PRICE_LOVELACE } from './config'
 
 import {
   deriveBeacon,
@@ -85,17 +68,12 @@ type DataFields = {
 
 function asFields(value: unknown): unknown[] | null {
   if (!value || typeof value !== 'object') return null
-
   const candidate = value as Partial<DataFields>
-
-  return Array.isArray(candidate.fields)
-    ? candidate.fields
-    : null
+  return Array.isArray(candidate.fields) ? candidate.fields : null
 }
 
 function parseData(raw: unknown): unknown {
   if (raw == null) return null
-
   if (typeof raw === 'string') {
     try {
       return Data.from(raw)
@@ -103,41 +81,31 @@ function parseData(raw: unknown): unknown {
       return null
     }
   }
-
   if (
     typeof raw === 'object' &&
     Array.isArray((raw as { fields?: unknown }).fields)
   ) {
     return raw
   }
-
   return raw
 }
 
 function constrIndex(value: unknown): number | null {
   if (!value || typeof value !== 'object') return null
-
-  const v = value as {
-    index?: unknown
-    constr?: unknown
-  }
-
+  const v = value as { index?: unknown; constr?: unknown }
   if (v.index !== undefined) {
     const index = Number(v.index)
     return Number.isInteger(index) ? index : null
   }
-
   if (v.constr !== undefined) {
     const index = Number(v.constr)
     return Number.isInteger(index) ? index : null
   }
-
   return null
 }
 
 function bytesField(value: unknown): string | null {
   if (typeof value === 'string') return value
-
   if (
     value &&
     typeof value === 'object' &&
@@ -145,27 +113,15 @@ function bytesField(value: unknown): string | null {
   ) {
     return (value as { bytes: string }).bytes
   }
-
   return null
 }
 
 function integerField(value: unknown): number | null {
   if (typeof value === 'number') return value
-
-  if (typeof value === 'bigint') {
-    return Number(value)
+  if (typeof value === 'bigint') return Number(value)
+  if (value && typeof value === 'object' && 'int' in value) {
+    return Number((value as { int: number | bigint | string }).int)
   }
-
-  if (
-    value &&
-    typeof value === 'object' &&
-    'int' in value
-  ) {
-    return Number(
-      (value as { int: number | bigint | string }).int,
-    )
-  }
-
   return null
 }
 
@@ -174,18 +130,9 @@ function integerField(value: unknown): number | null {
 // ---------------------------------------------------------------------------
 
 function utxoAssets(utxo: UTxO): Record<string, bigint> {
-  if (utxo.assets) {
-    return utxo.assets
-  }
-
-  const legacy = (utxo as unknown as {
-    value?: Record<string, bigint>
-  }).value
-
-  if (legacy) {
-    return legacy
-  }
-
+  if (utxo.assets) return utxo.assets
+  const legacy = (utxo as unknown as { value?: Record<string, bigint> }).value
+  if (legacy) return legacy
   throw new Error('UTxO senza assets')
 }
 
@@ -193,21 +140,13 @@ function utxoAssets(utxo: UTxO): Record<string, bigint> {
 // Redeemers
 // ---------------------------------------------------------------------------
 
-/**
- * PrizeAction:
- *
- * SyncBeacon = constructor 0
- * Reveal     = constructor 1 [playerSecret]
- * Claim      = constructor 2
- */
+/** SyncBeacon=0, Reveal=1 [secret], Claim=2 */
 function syncBeaconRedeemer(): Data {
   return emptyConstr(0)
 }
 
 function revealRedeemer(playerSecretHex: string): Data {
-  return constr(1, [
-    bytesData(playerSecretHex),
-  ])
+  return constr(1, [bytesData(playerSecretHex)])
 }
 
 function claimRedeemer(): Data {
@@ -219,8 +158,6 @@ function claimRedeemer(): Data {
 // ---------------------------------------------------------------------------
 
 /**
- * PrizeDatum in Types.hs:
- *
  *  0  pdTicketPolicy
  *  1  pdTicketName
  *  2  pdPlayerCommitment
@@ -239,27 +176,19 @@ function claimRedeemer(): Data {
  * 15  pdBeaconValue
  * 16  pdMcHash
  * 17  pdMateriosContext
+ * 18  pdIssuedAt
+ * 19  pdExpiresAt
  */
 
-type PrizeState = {
-  fields: unknown[]
-}
+type PrizeState = { fields: unknown[] }
 
 function decodePrizeDatum(utxo: UTxO): PrizeState | null {
   try {
     const raw = utxo.datum
-
-    if (raw == null) {
-      return null
-    }
-
+    if (raw == null) return null
     const parsed = parseData(raw)
     const fields = asFields(parsed)
-
-    if (!fields || fields.length !== 18) {
-      return null
-    }
-
+    if (!fields || fields.length !== 20) return null
     return { fields }
   } catch {
     return null
@@ -267,10 +196,7 @@ function decodePrizeDatum(utxo: UTxO): PrizeState | null {
 }
 
 function datumFromFields(fields: unknown[]): Data {
-  return constr(
-    0,
-    fields as Data[],
-  )
+  return constr(0, fields as Data[])
 }
 
 // ---------------------------------------------------------------------------
@@ -284,23 +210,15 @@ export async function findPrizeUtxo(
   ticketAssetNameHex: string,
 ): Promise<UTxO | null> {
   const utxos = await lucid.utxosAt(prizeAddress)
-
   for (const utxo of utxos) {
     const datum = decodePrizeDatum(utxo)
-
     if (!datum) continue
-
     const policy = bytesField(datum.fields[0])
     const name = bytesField(datum.fields[1])
-
-    if (
-      policy === ticketPolicyId &&
-      name === ticketAssetNameHex
-    ) {
+    if (policy === ticketPolicyId && name === ticketAssetNameHex) {
       return utxo
     }
   }
-
   return null
 }
 
@@ -313,19 +231,12 @@ export async function findTicketUtxoInWallet(
   ticketPolicyId: string,
   ticketAssetNameHex: string,
 ): Promise<UTxO | null> {
-  const unit =
-    ticketPolicyId + ticketAssetNameHex
-
+  const unit = ticketPolicyId + ticketAssetNameHex
   const utxos = await lucid.wallet.getUtxos()
-
   for (const utxo of utxos) {
     const assets = utxo.assets
-
-    if (assets && assets[unit] === 1n) {
-      return utxo
-    }
+    if (assets && assets[unit] === 1n) return utxo
   }
-
   return null
 }
 
@@ -340,33 +251,23 @@ type ClientBeaconTarget = {
   version: Uint8Array
 }
 
-function parseBeaconTarget(
-  value: unknown,
-): ClientBeaconTarget {
+function parseBeaconTarget(value: unknown): ClientBeaconTarget {
   const fields = asFields(value)
-
   if (!fields || fields.length !== 4) {
-    throw new Error(
-      'pdBeaconTarget non decodificabile',
-    )
+    throw new Error('pdBeaconTarget non decodificabile')
   }
-
   const networkId = integerField(fields[0])
   const round = integerField(fields[1])
   const mainchainRefHex = bytesField(fields[2])
   const versionHex = bytesField(fields[3])
-
   if (
     networkId === null ||
     round === null ||
     mainchainRefHex === null ||
     versionHex === null
   ) {
-    throw new Error(
-      'pdBeaconTarget contiene campi invalidi',
-    )
+    throw new Error('pdBeaconTarget contiene campi invalidi')
   }
-
   return {
     networkId,
     round,
@@ -379,57 +280,26 @@ function parseBeaconTarget(
 // BeaconRegistry
 // ---------------------------------------------------------------------------
 
-type RegistryState = {
-  fields: unknown[]
-}
+type RegistryState = { fields: unknown[] }
 
-function decodeRegistryDatum(
-  utxo: UTxO,
-): RegistryState | null {
+function decodeRegistryDatum(utxo: UTxO): RegistryState | null {
   try {
     const raw = utxo.datum
-
-    if (raw == null) {
-      return null
-    }
-
+    if (raw == null) return null
     const parsed = parseData(raw)
     const fields = asFields(parsed)
-
-    if (!fields || fields.length !== 7) {
-      return null
-    }
-
+    if (!fields || fields.length !== 7) return null
     return { fields }
   } catch {
     return null
   }
 }
 
-/**
- * BeaconRegistryDatum:
- *
- * 0 brRound
- * 1 brTarget
- * 2 brStatus
- * 3 brBeaconValue
- * 4 brMcHash
- * 5 brMateriosContext
- * 6 brRelayerPkh
- *
- * BeaconStatus:
- *   BeaconPending = 0
- *   BeaconReady   = 1
- */
-function registryRound(
-  datum: RegistryState,
-): number | null {
+function registryRound(datum: RegistryState): number | null {
   return integerField(datum.fields[0])
 }
 
-function registryStatus(
-  datum: RegistryState,
-): number | null {
+function registryStatus(datum: RegistryState): number | null {
   return constrIndex(datum.fields[2])
 }
 
@@ -439,12 +309,9 @@ function pickRegistryUtxo(
   requiredStatus: number,
 ): UTxO {
   const matches: UTxO[] = []
-
   for (const utxo of utxos) {
     const datum = decodeRegistryDatum(utxo)
-
     if (!datum) continue
-
     if (
       registryRound(datum) === round &&
       registryStatus(datum) === requiredStatus
@@ -452,21 +319,14 @@ function pickRegistryUtxo(
       matches.push(utxo)
     }
   }
-
-  if (matches.length === 1) {
-    return matches[0]
-  }
-
+  if (matches.length === 1) return matches[0]
   if (matches.length === 0) {
     throw new Error(
-      `Nessun BeaconRegistry con round=${round} ` +
-      `e status=${requiredStatus}.`,
+      `Nessun BeaconRegistry con round=${round} e status=${requiredStatus}.`,
     )
   }
-
   throw new Error(
-    `Trovati ${matches.length} BeaconRegistry ` +
-    `per round=${round}; atteso esattamente uno.`,
+    `Trovati ${matches.length} BeaconRegistry per round=${round}; atteso uno.`,
   )
 }
 
@@ -482,14 +342,9 @@ export async function syncBeacon(opts: {
   table?: PrizeTable
 }): Promise<string> {
   const lucid = wallet.getLucid()
+  if (!lucid) throw new Error('Wallet not connected')
 
-  if (!lucid) {
-    throw new Error('Wallet not connected')
-  }
-
-  const table =
-    opts.table ?? defaultPrizeTable
-
+  const table = opts.table ?? defaultPrizeTable
   const scripts = buildScriptsFromLucid(
     lucid,
     SALE_ADDRESS,
@@ -503,100 +358,51 @@ export async function syncBeacon(opts: {
     opts.ticketPolicyId,
     opts.ticketAssetNameHex,
   )
-
-  if (!prizeUtxo) {
-    throw new Error(
-      'Prize UTxO non trovato',
-    )
-  }
+  if (!prizeUtxo) throw new Error('Prize UTxO non trovato')
 
   const datum = decodePrizeDatum(prizeUtxo)
+  if (!datum) throw new Error('PrizeDatum non decodificabile')
 
-  if (!datum) {
-    throw new Error(
-      'PrizeDatum non decodificabile',
-    )
-  }
-
-  // Pending
   if (constrIndex(datum.fields[10]) !== 0) {
-    throw new Error(
-      'Prize non è Pending',
-    )
+    throw new Error('Prize non è Pending')
   }
-
-  // BeaconPending
   if (constrIndex(datum.fields[14]) !== 0) {
-    throw new Error(
-      'Prize non è BeaconPending',
-    )
+    throw new Error('Prize non è BeaconPending')
   }
 
-  const target = parseBeaconTarget(
-    datum.fields[13],
-  )
+  const target = parseBeaconTarget(datum.fields[13])
+  const registryUtxos = await lucid.utxosAt(opts.registryAddress)
+  const registryUtxo = pickRegistryUtxo(registryUtxos, target.round, 1)
 
-  const registryUtxos =
-    await lucid.utxosAt(opts.registryAddress)
-
-  const registryUtxo = pickRegistryUtxo(
-    registryUtxos,
-    target.round,
-    1, // BeaconReady
-  )
-
-  const registryDatum =
-    decodeRegistryDatum(registryUtxo)
-
+  const registryDatum = decodeRegistryDatum(registryUtxo)
   if (!registryDatum) {
-    throw new Error(
-      'BeaconRegistryDatum non decodificabile',
-    )
+    throw new Error('BeaconRegistryDatum non decodificabile')
   }
 
-  /*
-   * Registry:
-   *
-   * [round, target, status, R, mcHash, context, relayer]
-   */
-  const nextFields = [
-    ...datum.fields,
-  ]
-
+  const nextFields = [...datum.fields]
   nextFields[14] = emptyConstr(1)
   nextFields[15] = registryDatum.fields[3]
   nextFields[16] = registryDatum.fields[4]
   nextFields[17] = registryDatum.fields[5]
+  // 18/19 issuedAt/expiresAt immutati
 
-  const nextDatum =
-    datumFromFields(nextFields)
-
-  const owner =
-    await lucid.wallet.address()
+  const nextDatum = datumFromFields(nextFields)
+  const owner = await lucid.wallet.address()
 
   const tx = await lucid
     .newTx()
-    .collectFrom(
-      [prizeUtxo],
-      syncBeaconRedeemer(),
-    )
-    .attachSpendingValidator(
-      scripts.prizeValidator as Script,
-    )
+    .collectFrom([prizeUtxo], syncBeaconRedeemer())
+    .attachSpendingValidator(scripts.prizeValidator as Script)
     .readFrom([registryUtxo])
     .payToContract(
       opts.prizeAddress,
-      {
-        inline: Data.to(nextDatum),
-      },
+      { inline: Data.to(nextDatum) },
       utxoAssets(prizeUtxo),
     )
     .addSigner(owner)
     .complete()
 
-  const signed =
-    await lucid.signTx(tx)
-
+  const signed = await lucid.signTx(tx)
   return lucid.submitTx(signed)
 }
 
@@ -617,104 +423,53 @@ export async function revealPrize(opts: {
   resultHex: string
 }> {
   const lucid = wallet.getLucid()
+  if (!lucid) throw new Error('Wallet not connected')
 
-  if (!lucid) {
-    throw new Error('Wallet not connected')
-  }
-
-  const secretHex =
-    opts.playerSecretHex.startsWith('0x')
-      ? opts.playerSecretHex.slice(2)
-      : opts.playerSecretHex
+  const secretHex = opts.playerSecretHex.startsWith('0x')
+    ? opts.playerSecretHex.slice(2)
+    : opts.playerSecretHex
 
   if (!/^[0-9a-fA-F]{64}$/.test(secretHex)) {
-    throw new Error(
-      'playerSecretHex deve essere esattamente 32 byte (64 hex)',
-    )
+    throw new Error('playerSecretHex deve essere 32 byte (64 hex)')
   }
 
-  const playerSecret =
-    fromHex(secretHex)
+  const playerSecret = fromHex(secretHex)
+  const table = opts.table ?? defaultPrizeTable
+  const scripts = buildScriptsFromLucid(
+    lucid,
+    SALE_ADDRESS,
+    TICKET_PRICE_LOVELACE,
+    table,
+  )
 
-  const table =
-    opts.table ?? defaultPrizeTable
+  const prizeUtxo = await findPrizeUtxo(
+    lucid,
+    opts.prizeAddress,
+    opts.ticketPolicyId,
+    opts.ticketAssetNameHex,
+  )
+  if (!prizeUtxo) throw new Error('Prize UTxO non trovato')
 
-  const scripts =
-    buildScriptsFromLucid(
-      lucid,
-      SALE_ADDRESS,
-      TICKET_PRICE_LOVELACE,
-      table,
-    )
+  const datum = decodePrizeDatum(prizeUtxo)
+  if (!datum) throw new Error('PrizeDatum non decodificabile')
 
-  const prizeUtxo =
-    await findPrizeUtxo(
-      lucid,
-      opts.prizeAddress,
-      opts.ticketPolicyId,
-      opts.ticketAssetNameHex,
-    )
-
-  if (!prizeUtxo) {
-    throw new Error(
-      'Prize UTxO non trovato',
-    )
-  }
-
-  const datum =
-    decodePrizeDatum(prizeUtxo)
-
-  if (!datum) {
-    throw new Error(
-      'PrizeDatum non decodificabile',
-    )
-  }
-
-  // PrizeStatus = Pending
   if (constrIndex(datum.fields[10]) !== 0) {
-    throw new Error(
-      'Prize non è Pending',
-    )
+    throw new Error('Prize non è Pending')
   }
-
-  // BeaconStatus = Ready
   if (constrIndex(datum.fields[14]) !== 1) {
-    throw new Error(
-      'Beacon non Ready: esegui SyncBeacon prima',
-    )
+    throw new Error('Beacon non Ready: esegui SyncBeacon prima')
   }
 
-  const target =
-    parseBeaconTarget(
-      datum.fields[13],
-    )
-
-  const ticketNonce =
-    integerField(datum.fields[6])
-
-  const priceUsdm =
-    integerField(datum.fields[3])
-
-  const gameVersionHex =
-    bytesField(datum.fields[5])
-
-  const beaconValueHex =
-    bytesField(datum.fields[15])
-
-  const mcHashHex =
-    bytesField(datum.fields[16])
-
-  const materiosContextHex =
-    bytesField(datum.fields[17])
-
-  const playerCommitmentHex =
-    bytesField(datum.fields[2])
-
-  const commitmentHex =
-    bytesField(datum.fields[4])
-
-  const ticketNameHex =
-    bytesField(datum.fields[1])
+  const target = parseBeaconTarget(datum.fields[13])
+  const ticketNonce = integerField(datum.fields[6])
+  const priceUsdm = integerField(datum.fields[3])
+  const gameVersionHex = bytesField(datum.fields[5])
+  const beaconValueHex = bytesField(datum.fields[15])
+  const mcHashHex = bytesField(datum.fields[16])
+  const materiosContextHex = bytesField(datum.fields[17])
+  const playerCommitmentHex = bytesField(datum.fields[2])
+  const commitmentHex = bytesField(datum.fields[4])
+  const ticketNameHex = bytesField(datum.fields[1])
 
   if (
     ticketNonce === null ||
@@ -727,180 +482,83 @@ export async function revealPrize(opts: {
     !commitmentHex ||
     !ticketNameHex
   ) {
+    throw new Error('PrizeDatum incompleto per Reveal')
+  }
+
+  const gameVersion = fromHex(gameVersionHex)
+  const beaconValue = fromHex(beaconValueHex)
+  const mcHash = fromHex(mcHashHex)
+  const materiosContext = fromHex(materiosContextHex)
+
+  const expectedBeacon = await deriveBeacon(
+    target.networkId,
+    target.round,
+    target.mainchainRef,
+    mcHash,
+    materiosContext,
+    target.version,
+  )
+  if (toHex(expectedBeacon) !== beaconValueHex.toLowerCase()) {
     throw new Error(
-      'PrizeDatum incompleto per Reveal',
+      'Beacon mismatch: pdBeaconValue ≠ deriveBeacon(...)',
     )
   }
 
-  const gameVersion =
-    fromHex(gameVersionHex)
-
-  const beaconValue =
-    fromHex(beaconValueHex)
-
-  const mcHash =
-    fromHex(mcHashHex)
-
-  const materiosContext =
-    fromHex(materiosContextHex)
-
-  // ---------------------------------------------------------
-  // 1. Verifica client-side del Beacon
-  // ---------------------------------------------------------
-
-  const expectedBeacon =
-    await deriveBeacon(
-      target.networkId,
-      target.round,
-      target.mainchainRef,
-      mcHash,
-      materiosContext,
-      target.version,
-    )
-
-  if (
-    toHex(expectedBeacon) !==
-    beaconValueHex.toLowerCase()
-  ) {
-    throw new Error(
-      'Beacon mismatch: pdBeaconValue non corrisponde a deriveBeacon(...)',
-    )
-  }
-
-  // ---------------------------------------------------------
-  // 2. Verifica player commitment
-  // ---------------------------------------------------------
-
-  const expectedPlayerCommitment =
-    await playerCommitment(
-      target.round,
-      ticketNonce,
-      playerSecret,
-    )
-
+  const expectedPlayerCommitment = await playerCommitment(
+    target.round,
+    ticketNonce,
+    playerSecret,
+  )
   if (
     toHex(expectedPlayerCommitment) !==
     playerCommitmentHex.toLowerCase()
   ) {
-    throw new Error(
-      'playerSecret non corrisponde a pdPlayerCommitment',
-    )
+    throw new Error('playerSecret non corrisponde a pdPlayerCommitment')
   }
 
-  // ---------------------------------------------------------
-  // 3. Derivazione deterministica del risultato
-  // ---------------------------------------------------------
-
-  const ticketSeed =
-    await deriveTicketSeed(
-      target.round,
-      ticketNonce,
-      playerSecret,
-      beaconValue,
-      gameVersion,
-    )
-
-  const symbolsSeed =
-    await deriveSymbolsSeed(ticketSeed)
-
-  const symbols =
-    await generateSymbols(symbolsSeed)
-
+  const ticketSeed = await deriveTicketSeed(
+    target.round,
+    ticketNonce,
+    playerSecret,
+    beaconValue,
+    gameVersion,
+  )
+  const symbolsSeed = await deriveSymbolsSeed(ticketSeed)
+  const symbols = await generateSymbols(symbolsSeed)
   if (symbols.length !== 6) {
-    throw new Error(
-      'generateSymbols deve produrre esattamente 6 simboli',
-    )
+    throw new Error('generateSymbols deve produrre 6 simboli')
   }
 
-  /*
-   * PrizeValidator.hs:
-   *
-   * resultBinding digest symbols =
-   *   sha2_256 (field digest || field symbols)
-   *
-   * dove digest = sha2_256 symbolsSeed
-   */
-  const digest =
-    await sha256(symbolsSeed)
+  const digest = await sha256(symbolsSeed)
+  const expectedResult = await sha256(
+    new Uint8Array([...field(digest), ...field(symbols)]),
+  )
+  const tier = classifyTier(symbols)
+  const prizeAmount = prizeAmountForTier(table, tier, priceUsdm)
 
-  const expectedResult =
-    await sha256(
-      new Uint8Array([
-        ...field(digest),
-        ...field(symbols),
-      ]),
-    )
+  const nextFields = [...datum.fields]
+  nextFields[7] = BigInt(prizeAmount)
+  nextFields[10] = emptyConstr(1) // Revealed
+  nextFields[11] = toHex(expectedResult)
+  nextFields[12] = BigInt(tier)
 
-  const tier =
-    classifyTier(symbols)
-
-  const prizeAmount =
-    prizeAmountForTier(
-      table,
-      tier,
-      priceUsdm,
-    )
-
-  // ---------------------------------------------------------
-  // 4. Costruzione datum Revealed
-  // ---------------------------------------------------------
-
-  const nextFields = [
-    ...datum.fields,
-  ]
-
-  nextFields[7] =
-    BigInt(prizeAmount)
-
-  nextFields[10] =
-    emptyConstr(1) // Revealed
-
-  nextFields[11] =
-    toHex(expectedResult)
-
-  nextFields[12] =
-    BigInt(tier)
-
-  /*
-   * 13 target
-   * 14 BeaconReady
-   * 15 R
-   * 16 mcHash
-   * 17 MateriosContext
-   *
-   * restano invariati.
-   */
-
-  const nextDatum =
-    datumFromFields(nextFields)
-
-  const owner =
-    await lucid.wallet.address()
+  const nextDatum = datumFromFields(nextFields)
+  const owner = await lucid.wallet.address()
 
   const tx = await lucid
     .newTx()
-    .collectFrom(
-      [prizeUtxo],
-      revealRedeemer(secretHex),
-    )
-    .attachSpendingValidator(
-      scripts.prizeValidator as Script,
-    )
+    .collectFrom([prizeUtxo], revealRedeemer(secretHex))
+    .attachSpendingValidator(scripts.prizeValidator as Script)
     .payToContract(
       opts.prizeAddress,
-      {
-        inline: Data.to(nextDatum),
-      },
+      { inline: Data.to(nextDatum) },
       utxoAssets(prizeUtxo),
     )
     .addSigner(owner)
     .complete()
 
-  const signed =
-    await lucid.signTx(tx)
-
-  const txHash =
-    await lucid.submitTx(signed)
+  const signed = await lucid.signTx(tx)
+  const txHash = await lucid.submitTx(signed)
 
   return {
     txHash,
@@ -911,7 +569,7 @@ export async function revealPrize(opts: {
 }
 
 // ---------------------------------------------------------------------------
-// Claim
+// Claim — keep NFT, status Claimed, no burn
 // ---------------------------------------------------------------------------
 
 export async function claimPrize(opts: {
@@ -922,144 +580,82 @@ export async function claimPrize(opts: {
   table?: PrizeTable
 }): Promise<string> {
   const lucid = wallet.getLucid()
+  if (!lucid) throw new Error('Wallet not connected')
 
-  if (!lucid) {
-    throw new Error('Wallet not connected')
-  }
+  const table = opts.table ?? defaultPrizeTable
+  const scripts = buildScriptsFromLucid(
+    lucid,
+    SALE_ADDRESS,
+    opts.priceLovelace ?? TICKET_PRICE_LOVELACE,
+    table,
+  )
 
-  const table =
-    opts.table ?? defaultPrizeTable
+  const prizeUtxo = await findPrizeUtxo(
+    lucid,
+    opts.prizeAddress,
+    opts.ticketPolicyId,
+    opts.ticketAssetNameHex,
+  )
+  if (!prizeUtxo) throw new Error('Prize UTxO non trovato')
 
-  const scripts =
-    buildScriptsFromLucid(
-      lucid,
-      SALE_ADDRESS,
-      opts.priceLovelace ??
-        TICKET_PRICE_LOVELACE,
-      table,
-    )
+  const ticketUtxo = await findTicketUtxoInWallet(
+    lucid,
+    opts.ticketPolicyId,
+    opts.ticketAssetNameHex,
+  )
+  if (!ticketUtxo) throw new Error('Ticket NFT non trovato nel wallet')
 
-  const prizeUtxo =
-    await findPrizeUtxo(
-      lucid,
-      opts.prizeAddress,
-      opts.ticketPolicyId,
-      opts.ticketAssetNameHex,
-    )
+  const datum = decodePrizeDatum(prizeUtxo)
+  if (!datum) throw new Error('PrizeDatum non decodificabile')
 
-  if (!prizeUtxo) {
-    throw new Error(
-      'Prize UTxO non trovato',
-    )
-  }
-
-  const ticketUtxo =
-    await findTicketUtxoInWallet(
-      lucid,
-      opts.ticketPolicyId,
-      opts.ticketAssetNameHex,
-    )
-
-  if (!ticketUtxo) {
-    throw new Error(
-      'Ticket NFT non trovato nel wallet',
-    )
-  }
-
-  const datum =
-    decodePrizeDatum(prizeUtxo)
-
-  if (!datum) {
-    throw new Error(
-      'PrizeDatum non decodificabile',
-    )
-  }
-
-  // PrizeStatus = Revealed
   if (constrIndex(datum.fields[10]) !== 1) {
+    throw new Error('Prize non ancora Revealed')
+  }
+
+  const prizeAmount = integerField(datum.fields[7])
+  if (prizeAmount === null || prizeAmount <= 0) {
+    throw new Error('PrizeAmount ≤ 0: perdente o payout non valido')
+  }
+
+  const expiresAt = integerField(datum.fields[19])
+  if (expiresAt === null) {
+    throw new Error('pdExpiresAt mancante')
+  }
+  if (Date.now() > expiresAt) {
     throw new Error(
-      'Prize non ancora Revealed',
+      'Claim window chiusa. Reveal storico ok; claim economico no.',
     )
   }
 
-  const prizeAmount =
-    integerField(datum.fields[7])
+  const buyer = await lucid.wallet.address()
+  const paymentPolicy = bytesField(datum.fields[8]) ?? ''
+  const paymentName = bytesField(datum.fields[9]) ?? ''
 
-  if (
-    prizeAmount === null ||
-    prizeAmount <= 0
-  ) {
-    throw new Error(
-      'PrizeAmount ≤ 0: ticket perdente o payout non valido',
-    )
-  }
+  const payout: Record<string, bigint> =
+    paymentPolicy.length === 0
+      ? { lovelace: BigInt(prizeAmount) }
+      : { [paymentPolicy + paymentName]: BigInt(prizeAmount) }
 
-  const buyer =
-    await lucid.wallet.address()
+  const nextFields = [...datum.fields]
+  nextFields[10] = emptyConstr(2) // Claimed
+  const nextDatum = datumFromFields(nextFields)
 
-  const unit =
-    opts.ticketPolicyId +
-    opts.ticketAssetNameHex
-
-  const paymentPolicy =
-    bytesField(datum.fields[8]) ?? ''
-
-  const paymentName =
-    bytesField(datum.fields[9]) ?? ''
-
-  let payout: Record<string, bigint>
-
-  if (paymentPolicy.length === 0) {
-    payout = {
-      lovelace: BigInt(prizeAmount),
-    }
-  } else {
-    payout = {
-      [paymentPolicy + paymentName]:
-        BigInt(prizeAmount),
-    }
-  }
-
-  /*
-   * Claim on-chain richiede:
-   *
-   * - ticket presente in un input PubKeyCredential
-   * - firma del proprietario
-   * - ticket bruciato esattamente -1
-   * - Prize UTxO chiuso
-   * - payout >= pdPrizeAmount
-   */
   const tx = await lucid
     .newTx()
-    .collectFrom(
-      [prizeUtxo],
-      claimRedeemer(),
+    .collectFrom([prizeUtxo], claimRedeemer())
+    .attachSpendingValidator(scripts.prizeValidator as Script)
+    .collectFrom([ticketUtxo])
+    .payToContract(
+      opts.prizeAddress,
+      { inline: Data.to(nextDatum) },
+      utxoAssets(prizeUtxo),
     )
-    .attachSpendingValidator(
-      scripts.prizeValidator as Script,
-    )
-    .collectFrom(
-      [ticketUtxo],
-    )
-    .mintAssets(
-      {
-        [unit]: -1n,
-      },
-      Data.void(),
-    )
-    .attachMintingPolicy(
-      scripts.mintPolicy as Script,
-    )
-    .payToAddress(
-      buyer,
-      payout,
-    )
+    .payToAddress(buyer, payout)
     .addSigner(buyer)
+    .validTo(expiresAt)
     .complete()
 
-  const signed =
-    await lucid.signTx(tx)
-
+  const signed = await lucid.signTx(tx)
   return lucid.submitTx(signed)
 }
 
@@ -1067,29 +663,13 @@ export async function claimPrize(opts: {
 // Player secret validation
 // ---------------------------------------------------------------------------
 
-export function validatePlayerSecretHex(
-  value: string,
-): Uint8Array {
-  const clean =
-    value.startsWith('0x')
-      ? value.slice(2)
-      : value
-
-  if (
-    clean.length !== 64 ||
-    !/^[0-9a-fA-F]+$/.test(clean)
-  ) {
-    throw new Error(
-      'playerSecretHex deve essere esattamente 32 bytes',
-    )
+export function validatePlayerSecretHex(value: string): Uint8Array {
+  const clean = value.startsWith('0x') ? value.slice(2) : value
+  if (clean.length !== 64 || !/^[0-9a-fA-F]+$/.test(clean)) {
+    throw new Error('playerSecretHex deve essere esattamente 32 bytes')
   }
-
   return fromHex(clean)
 }
-
-// ---------------------------------------------------------------------------
-// Default export
-// ---------------------------------------------------------------------------
 
 export default {
   findPrizeUtxo,

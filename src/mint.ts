@@ -1,45 +1,8 @@
 /**
  * Mint seriale + Prize UTxO Pending in una sola tx.
  *
- * La MintPolicy parametrizzata richiede:
- *   1. counterHash
- *   2. prizeHash
- *   3. registryHash
- *   4. salePkh
- *   5. priceLovelace
- *
- * La PrizeValidator parametrizzata richiede:
- *   1. registryHash
- *   2. PrizeTable
- *
- * La transazione di mint:
- *   - consuma il Counter UTxO;
- *   - crea il counter n+1;
- *   - minta esattamente il ticket n;
- *   - paga il prezzo a SALE_ADDRESS;
- *   - legge il BeaconRegistry come reference input;
- *   - crea il Prize UTxO in stato Pending;
- *   - trasferisce il ticket al buyer.
- *
- * Il playerSecret viene generato lato client e NON viene messo on-chain.
- * Viene conservato dal caller per la successiva fase Reveal.
- *
- * FIX (vedi commenti su constr/beaconTargetToData/prizeDatumToData):
- * la versione precedente chiamava Data.to() su ogni campo prima di
- * inserirlo nel Constr esterno, e poi di nuovo sull'intero Constr.
- * Data.to() serializza in CBOR hex finale: chiamarlo sui campi interni
- * e poi di nuovo sul risultato codifica due volte -- gli Integer
- * (pdPriceUsdm, pdTicketNonce, pdPrizeAmount, pdPrizeTier) finiscono
- * incapsulati come bytestring contenenti il CBOR di se stessi invece che
- * come Integer veri, e pdBeaconTarget (che deve essere una Constr
- * annidata) finisce come bytestring opaco invece che come struttura
- * annidata. Il risultato e' un datum che PlutusTx.unstableMakeIsData non
- * riesce a decodificare come PrizeDatum (fromBuiltinData fallisce sempre),
- * facendo fallire a cascata SyncBeacon, Reveal, Claim e persino il
- * controllo che MintPolicy fa sul Prize UTxO appena creato.
- * Ora si costruisce l'intero albero Constr annidato SENZA mai chiamare
- * Data.to() sui campi interni, e si chiama Data.to() una sola volta, nel
- * punto in cui il datum viene davvero allegato alla transazione.
+ * PrizeDatum include pdIssuedAt / pdExpiresAt (POSIX ms, ≥ 365 giorni).
+ * Data.to() una sola volta sull'albero Constr (no double-encode).
  */
 
 import { Constr, Data, type Script, type UTxO } from 'lucid-cardano'
@@ -74,54 +37,23 @@ import {
 
 const MIN_ADA_COUNTER = 2_000_000n
 const MIN_ADA_PRIZE = 2_000_000n
+const MS_PER_DAY = 86_400_000n
 
-/**
- * Default applicativi.
- *
- * Non sono importati da config.ts perché attualmente il repo
- * non li esporta. Devono essere sovrascrivibili tramite opts.
- */
 const DEFAULT_NETWORK_ID = 0
 const DEFAULT_ROUND_ID = 0
 const DEFAULT_GAME_VERSION = 'V1'
 const DEFAULT_PRICE_USDM = 2
 
-/**
- * Costruisce un nodo Constr "puro", senza serializzare nulla.
- *
- * IMPORTANTE: i `fields` qui devono essere valori Data grezzi
- * (bigint, string-hex, Uint8Array-come-hex-string, o altre Constr
- * annidate) -- MAI il risultato di Data.to(). La serializzazione a CBOR
- * hex avviene una sola volta, alla fine, quando l'intera struttura viene
- * passata a Data.to() nel punto d'uso (es. `inline: Data.to(datum)`).
- */
 function constr(index: number, fields: Data[] = []): Constr<Data> {
   return new Constr(index, fields)
 }
 
-/**
- * Converte una stringa UTF-8 nel formato hex usato come
- * BuiltinByteString Plutus.
- */
 function strToHex(value: string): string {
   return Array.from(new TextEncoder().encode(value))
     .map((byte) => byte.toString(16).padStart(2, '0'))
     .join('')
 }
 
-/**
- * BeaconTarget:
- *
- * BeaconTarget
- *   { btNetworkId
- *   , btRound
- *   , btMainchainRef
- *   , btVersion
- *   }
- *
- * Restituisce una Constr "grezza" (non serializzata): va annidata dentro
- * la Constr di PrizeDatum cosi' com'e', senza passare da Data.to() prima.
- */
 function beaconTargetToConstr(target: BeaconTarget): Constr<Data> {
   return constr(0, [
     BigInt(target.networkId),
@@ -132,30 +64,8 @@ function beaconTargetToConstr(target: BeaconTarget): Constr<Data> {
 }
 
 /**
- * PrizeDatum:
- *
- *  0  pdTicketPolicy
- *  1  pdTicketName
- *  2  pdPlayerCommitment
- *  3  pdPriceUsdm
- *  4  pdCommitment
- *  5  pdGameVersion
- *  6  pdTicketNonce
- *  7  pdPrizeAmount
- *  8  pdPaymentPolicy
- *  9  pdPaymentName
- * 10  pdStatus
- * 11  pdResult
- * 12  pdPrizeTier
- * 13  pdBeaconTarget
- * 14  pdBeaconStatus
- * 15  pdBeaconValue
- * 16  pdMcHash
- * 17  pdMateriosContext
- *
- * Restituisce una Constr "grezza" (non serializzata). Data.to() va
- * chiamato una sola volta da chi consuma questa funzione, nel punto in
- * cui il datum viene davvero scritto sulla transazione.
+ * PrizeDatum fields 0..19 (Types.hs):
+ * 18 pdIssuedAt, 19 pdExpiresAt
  */
 function buildPrizeDatumConstr(fields: {
   ticketPolicyHex: string
@@ -169,6 +79,8 @@ function buildPrizeDatumConstr(fields: {
   paymentPolicyHex: string
   paymentNameHex: string
   target: BeaconTarget
+  issuedAt: bigint
+  expiresAt: bigint
 }): Constr<Data> {
   return constr(0, [
     fields.ticketPolicyHex,
@@ -181,165 +93,80 @@ function buildPrizeDatumConstr(fields: {
     fields.prizeAmount,
     fields.paymentPolicyHex,
     fields.paymentNameHex,
-
-    // PrizeStatus = Pending  (Constr index 0, nessun campo)
-    constr(0),
-
-    // pdResult (vuoto: non ancora rivelato)
+    constr(0), // Pending
     '',
-
-    // pdPrizeTier
     0n,
-
-    // pdBeaconTarget -- Constr annidata, NON serializzata a parte
     beaconTargetToConstr(fields.target),
-
-    // BeaconStatus = BeaconPending (Constr index 0, nessun campo)
-    constr(0),
-
-    // pdBeaconValue
+    constr(0), // BeaconPending
     '',
-
-    // pdMcHash
     '',
-
-    // pdMateriosContext
     '',
+    fields.issuedAt,
+    fields.expiresAt,
   ])
 }
 
 function parseCounterDatum(datum: unknown): number | null {
-  if (typeof datum === 'number') {
-    return datum
-  }
-
-  if (typeof datum === 'bigint') {
-    return Number(datum)
-  }
-
+  if (typeof datum === 'number') return datum
+  if (typeof datum === 'bigint') return Number(datum)
   if (typeof datum === 'string' && /^\d+$/.test(datum)) {
     return Number.parseInt(datum, 10)
   }
-
-  if (!datum || typeof datum !== 'object') {
-    return null
-  }
-
+  if (!datum || typeof datum !== 'object') return null
   const value = datum as Record<string, unknown>
-
-  if ('int' in value) {
-    return Number(value.int)
-  }
-
+  if ('int' in value) return Number(value.int)
   if ('fields' in value && Array.isArray(value.fields)) {
     const first = value.fields[0]
-
-    if (typeof first === 'number') {
-      return first
-    }
-
-    if (typeof first === 'bigint') {
-      return Number(first)
-    }
-
-    if (
-      first &&
-      typeof first === 'object' &&
-      'int' in first
-    ) {
-      return Number(
-        (first as Record<string, unknown>).int,
-      )
+    if (typeof first === 'number') return first
+    if (typeof first === 'bigint') return Number(first)
+    if (first && typeof first === 'object' && 'int' in first) {
+      return Number((first as Record<string, unknown>).int)
     }
   }
-
   return null
 }
 
-/**
- * Estrae il round e lo status dal BeaconRegistry datum.
- *
- * BeaconRegistryDatum:
- *   brRound
- *   brTarget
- *   brStatus
- *   brBeaconValue
- *   brMcHash
- *   brMateriosContext
- *   brRelayerPkh
- */
-function registryIsPendingForRound(
-  datum: unknown,
-  roundId: number,
-): boolean {
-  if (!datum || typeof datum !== 'object') {
-    return false
-  }
-
+function registryIsPendingForRound(datum: unknown, roundId: number): boolean {
+  if (!datum || typeof datum !== 'object') return false
   const value = datum as Record<string, any>
-  const fields = Array.isArray(value.fields)
-    ? value.fields
-    : null
-
-  if (!fields || fields.length < 3) {
-    return false
-  }
+  const fields = Array.isArray(value.fields) ? value.fields : null
+  if (!fields || fields.length < 3) return false
 
   const roundField = fields[0]
-
   const round =
     typeof roundField === 'bigint'
       ? Number(roundField)
       : typeof roundField === 'number'
         ? roundField
-        : roundField &&
-            typeof roundField === 'object' &&
-            'int' in roundField
+        : roundField && typeof roundField === 'object' && 'int' in roundField
           ? Number(roundField.int)
           : null
 
-  if (round !== roundId) {
-    return false
-  }
+  if (round !== roundId) return false
 
   const status = fields[2]
-
   const statusIndex =
-    status &&
-    typeof status === 'object' &&
-    'index' in status
+    status && typeof status === 'object' && 'index' in status
       ? Number(status.index)
-      : status &&
-          typeof status === 'object' &&
-          'constr' in status
+      : status && typeof status === 'object' && 'constr' in status
         ? Number(status.constr)
         : null
 
   return statusIndex === 0
 }
 
-function pickPendingRegistryUtxo(
-  utxos: UTxO[],
-  roundId: number,
-): UTxO {
+function pickPendingRegistryUtxo(utxos: UTxO[], roundId: number): UTxO {
   const matching = utxos.filter((utxo) =>
     registryIsPendingForRound(utxo.datum, roundId),
   )
-
-  if (matching.length === 1) {
-    return matching[0]
-  }
-
+  if (matching.length === 1) return matching[0]
   if (matching.length > 1) {
     throw new Error(
-      `Più BeaconRegistry Pending trovati per round=${roundId}. ` +
-        `Il modello richiede un solo registry UTxO per round.`,
+      `Più BeaconRegistry Pending per round=${roundId}. Atteso uno solo.`,
     )
   }
-
   throw new Error(
-    `Nessun BeaconRegistry Pending trovato per round=${roundId}. ` +
-      `Il registry deve essere pubblicato prima del mint.`,
+    `Nessun BeaconRegistry Pending per round=${roundId}. Pubblica il registry prima del mint.`,
   )
 }
 
@@ -355,49 +182,22 @@ export type MintSerialResult = {
   prizeAddress: string
   counterAddress: string
   registryAddress: string
+  issuedAt: number
+  expiresAt: number
 }
 
 export type MintSerialOptions = {
   saleAddress?: string
   priceLovelace?: number
   priceUsdm?: number
-
-  /**
-   * Identità canonica della partita.
-   *
-   * Questi valori devono corrispondere al BeaconRegistry
-   * che verrà successivamente sincronizzato nel Prize UTxO.
-   */
   networkId?: number
   roundId?: number
   mainchainRef?: Uint8Array
   gameVersion?: Uint8Array
-
-  /**
-   * Funding ADA del Prize UTxO.
-   */
   prizeFundingLovelace?: bigint
-
-  /**
-   * Importo del premio.
-   *
-   * Per il modello attuale il payment asset è ADA,
-   * quindi il default è uguale al funding iniziale.
-   */
   prizeAmount?: bigint
-
   table?: PrizeTable
-
-  /**
-   * Se omesso viene generato casualmente.
-   *
-   * Il caller DEVE conservarlo per Reveal.
-   */
   playerSecret?: Uint8Array
-
-  /**
-   * Default = seriale del Counter.
-   */
   ticketNonce?: number
 }
 
@@ -405,68 +205,22 @@ export async function mintSerialNFT(
   opts: MintSerialOptions = {},
 ): Promise<MintSerialResult> {
   const lucid = wallet.getLucid()
+  if (!lucid) throw new Error('Wallet not connected')
 
-  if (!lucid) {
-    throw new Error('Wallet not connected')
-  }
+  const saleAddress = opts.saleAddress ?? SALE_ADDRESS
+  if (!saleAddress) throw new Error('SALE_ADDRESS mancante')
 
-  const saleAddress =
-    opts.saleAddress ?? SALE_ADDRESS
-
-  if (!saleAddress) {
-    throw new Error('SALE_ADDRESS mancante')
-  }
-
-  const priceLovelace =
-    opts.priceLovelace ??
-    TICKET_PRICE_LOVELACE
-
-  const priceUsdm =
-    opts.priceUsdm ??
-    DEFAULT_PRICE_USDM
-
-  const networkId =
-    opts.networkId ??
-    DEFAULT_NETWORK_ID
-
-  const roundId =
-    opts.roundId ??
-    DEFAULT_ROUND_ID
-
-  const gameVersion =
-    opts.gameVersion ??
-    utf8(DEFAULT_GAME_VERSION)
-
+  const priceLovelace = opts.priceLovelace ?? TICKET_PRICE_LOVELACE
+  const priceUsdm = opts.priceUsdm ?? DEFAULT_PRICE_USDM
+  const networkId = opts.networkId ?? DEFAULT_NETWORK_ID
+  const roundId = opts.roundId ?? DEFAULT_ROUND_ID
+  const gameVersion = opts.gameVersion ?? utf8(DEFAULT_GAME_VERSION)
   const mainchainRef =
-    opts.mainchainRef ??
-    utf8(`pre-rich-round-${roundId}`)
+    opts.mainchainRef ?? utf8(`pre-rich-round-${roundId}`)
+  const table = opts.table ?? defaultPrizeTable
+  const prizeFunding = opts.prizeFundingLovelace ?? MIN_ADA_PRIZE
+  const prizeAmount = opts.prizeAmount ?? prizeFunding
 
-  const table =
-    opts.table ??
-    defaultPrizeTable
-
-  const prizeFunding =
-    opts.prizeFundingLovelace ??
-    MIN_ADA_PRIZE
-
-  const prizeAmount =
-    opts.prizeAmount ??
-    prizeFunding
-
-  /**
-   * Applica:
-   *
-   * MintPolicy:
-   *   counterHash
-   *   prizeHash
-   *   registryHash
-   *   salePkh
-   *   priceLovelace
-   *
-   * PrizeValidator:
-   *   registryHash
-   *   PrizeTable
-   */
   const scripts = buildScriptsFromLucid(
     lucid,
     saleAddress,
@@ -483,38 +237,16 @@ export async function mintSerialNFT(
     prizeAddress,
   } = scripts
 
-  /**
-   * prizeValidator viene costruito da loadValidator e serve
-   * per ricavare l'indirizzo del Prize UTxO.
-   *
-   * Non deve essere attaccato come spending validator durante
-   * il mint: il Prize UTxO viene solamente creato.
-   */
   void prizeValidator
 
-  if (
-    !counterAddress ||
-    !registryAddress ||
-    !prizeAddress
-  ) {
-    throw new Error(
-      'Impossibile derivare gli script address da Lucid',
-    )
+  if (!counterAddress || !registryAddress || !prizeAddress) {
+    throw new Error('Impossibile derivare gli script address da Lucid')
   }
 
-  // ------------------------------------------------------------
-  // Counter
-  // ------------------------------------------------------------
-
-  const counterUtxos =
-    await lucid.utxosAt(counterAddress)
-
+  const counterUtxos = await lucid.utxosAt(counterAddress)
   if (counterUtxos.length === 0) {
-    throw new Error(
-      `Nessun Counter UTxO a ${counterAddress}`,
-    )
+    throw new Error(`Nessun Counter UTxO a ${counterAddress}`)
   }
-
   if (counterUtxos.length !== 1) {
     throw new Error(
       `Attesi esattamente 1 Counter UTxO, trovati ${counterUtxos.length}`,
@@ -522,37 +254,22 @@ export async function mintSerialNFT(
   }
 
   const counterUtxo = counterUtxos[0]
-
   let n: number | null = null
-
   try {
     const rawDatum =
-      counterUtxo.datum ??
-      (await lucid.datumOf(counterUtxo))
-
+      counterUtxo.datum ?? (await lucid.datumOf(counterUtxo))
     n = parseCounterDatum(rawDatum)
   } catch (error) {
-    console.error(
-      'Errore nella lettura del Counter datum:',
-      error,
-    )
+    console.error('Errore lettura Counter datum:', error)
   }
 
   if (n === null || !Number.isInteger(n) || n < 0) {
-    throw new Error(
-      'Counter datum non leggibile: atteso Integer non negativo',
-    )
+    throw new Error('Counter datum non leggibile')
   }
 
   const tokenNameAscii = String(n)
   const tokenNameHex = strToHex(tokenNameAscii)
-
-  const ticketNonce =
-    opts.ticketNonce ?? n
-
-  // ------------------------------------------------------------
-  // BeaconTarget
-  // ------------------------------------------------------------
+  const ticketNonce = opts.ticketNonce ?? n
 
   const target: BeaconTarget = {
     networkId,
@@ -561,221 +278,100 @@ export async function mintSerialNFT(
     version: gameVersion,
   }
 
-  // ------------------------------------------------------------
-  // BeaconRegistry reference input
-  // ------------------------------------------------------------
-
-  const registryUtxos =
-    await lucid.utxosAt(registryAddress)
-
+  const registryUtxos = await lucid.utxosAt(registryAddress)
   if (registryUtxos.length === 0) {
-    throw new Error(
-      `Nessun BeaconRegistry UTxO a ${registryAddress}`,
-    )
+    throw new Error(`Nessun BeaconRegistry UTxO a ${registryAddress}`)
   }
 
-  const registryUtxo =
-    pickPendingRegistryUtxo(
-      registryUtxos,
-      roundId,
-    )
+  const registryUtxo = pickPendingRegistryUtxo(registryUtxos, roundId)
 
-  // FIX/AGGIUNTA: la creazione della entry Pending non è vincolata da
-  // alcun validator on-chain -- vedi createRound.ts. Verifichiamo qui,
-  // lato client, che il relayer del round trovato sia quello atteso,
-  // prima di legare il ticket a un round potenzialmente contraffatto.
   if (RELAYER_PKH) {
     const registryFields = Array.isArray(
       (registryUtxo.datum as any)?.fields,
     )
       ? (registryUtxo.datum as any).fields
       : null
-
-    const foundRelayerPkh =
-      registryFields?.[6] ?? null
-
+    const foundRelayerPkh = registryFields?.[6] ?? null
     if (
       !foundRelayerPkh ||
-      String(foundRelayerPkh).toLowerCase() !==
-        RELAYER_PKH.toLowerCase()
+      String(foundRelayerPkh).toLowerCase() !== RELAYER_PKH.toLowerCase()
     ) {
       throw new Error(
-        `BeaconRegistry per round=${roundId} ha un relayerPkh inatteso ` +
-          `(atteso ${RELAYER_PKH}). Round potenzialmente contraffatto: rifiuto il mint.`,
+        `BeaconRegistry round=${roundId}: relayerPkh inatteso (atteso ${RELAYER_PKH})`,
       )
     }
   } else {
-    console.warn(
-      'RELAYER_PKH non configurato in config.ts: il round trovato non viene verificato.',
-    )
+    console.warn('RELAYER_PKH non configurato: round non verificato.')
   }
 
-  // ------------------------------------------------------------
-  // Player secret / commitments
-  // ------------------------------------------------------------
-
-  const playerSecret =
-    opts.playerSecret ??
-    randomPlayerSecret(32)
-
+  const playerSecret = opts.playerSecret ?? randomPlayerSecret(32)
   if (playerSecret.length !== 32) {
-    throw new Error(
-      'playerSecret deve essere esattamente 32 bytes',
-    )
+    throw new Error('playerSecret deve essere 32 bytes')
   }
 
-  const pCommit =
-    await playerCommitment(
-      roundId,
-      ticketNonce,
-      playerSecret,
-    )
+  const pCommit = await playerCommitment(roundId, ticketNonce, playerSecret)
+  const ticketIdBytes = new TextEncoder().encode(tokenNameAscii)
+  const targetEncoding = encodeBeaconTarget(target)
+  const commitment = await ticketCommitment(
+    ticketIdBytes,
+    pCommit,
+    gameVersion,
+    ticketNonce,
+    priceUsdm,
+    targetEncoding,
+  )
 
-  const ticketIdBytes =
-    new TextEncoder().encode(tokenNameAscii)
+  const playerCommitmentHex = toHex(pCommit)
+  const commitmentHex = toHex(commitment)
+  const gameVersionHex = toHex(gameVersion)
 
-  const targetEncoding =
-    encodeBeaconTarget(target)
+  const issuedAtMs = BigInt(Date.now())
+  const expiresAtMs = issuedAtMs + 365n * MS_PER_DAY
 
-  const commitment =
-    await ticketCommitment(
-      ticketIdBytes,
-      pCommit,
-      gameVersion,
-      ticketNonce,
-      priceUsdm,
-      targetEncoding,
-    )
+  const prizeDatumConstr = buildPrizeDatumConstr({
+    ticketPolicyHex: ticketPolicyId,
+    ticketNameHex: tokenNameHex,
+    playerCommitmentHex,
+    priceUsdm,
+    commitmentHex,
+    gameVersionHex,
+    ticketNonce,
+    prizeAmount,
+    paymentPolicyHex: '',
+    paymentNameHex: '',
+    target,
+    issuedAt: issuedAtMs,
+    expiresAt: expiresAtMs,
+  })
 
-  const playerCommitmentHex =
-    toHex(pCommit)
-
-  const commitmentHex =
-    toHex(commitment)
-
-  const gameVersionHex =
-    toHex(gameVersion)
-
-  // ------------------------------------------------------------
-  // PrizeDatum Pending (Constr grezza, non ancora serializzata)
-  // ------------------------------------------------------------
-
-  const prizeDatumConstr =
-    buildPrizeDatumConstr({
-      ticketPolicyHex: ticketPolicyId,
-      ticketNameHex: tokenNameHex,
-      playerCommitmentHex,
-      priceUsdm,
-      commitmentHex,
-      gameVersionHex,
-      ticketNonce,
-      prizeAmount,
-      paymentPolicyHex: '',
-      paymentNameHex: '',
-      target,
-    })
-
-  // ------------------------------------------------------------
-  // Ticket NFT
-  // ------------------------------------------------------------
-
-  const unit =
-    ticketPolicyId + tokenNameHex
-
-  const mintAssets: Record<string, bigint> = {
-    [unit]: 1n,
-  }
-
-  const buyer =
-    await lucid.wallet.address()
-
-  // ------------------------------------------------------------
-  // Transaction
-  // ------------------------------------------------------------
+  const unit = ticketPolicyId + tokenNameHex
+  const mintAssets: Record<string, bigint> = { [unit]: 1n }
+  const buyer = await lucid.wallet.address()
 
   const tx = await lucid
     .newTx()
-
-    // Counter
-    .collectFrom(
-      [counterUtxo],
-      Data.void(),
-    )
-    .attachSpendingValidator(
-      counterValidator,
-    )
-
-    // Ticket mint
-    .mintAssets(
-      mintAssets,
-      Data.void(),
-    )
-    .attachMintingPolicy(
-      mintPolicy as Script,
-    )
-
-    // BeaconRegistry come reference input.
-    //
-    // Non viene consumato dal mint.
-    .readFrom([
-      registryUtxo,
-    ])
-
-    // Sale payment
-    .payToAddress(
-      saleAddress,
-      {
-        lovelace:
-          BigInt(priceLovelace),
-      },
-    )
-
-    // Counter n+1
+    .collectFrom([counterUtxo], Data.void())
+    .attachSpendingValidator(counterValidator)
+    .mintAssets(mintAssets, Data.void())
+    .attachMintingPolicy(mintPolicy as Script)
+    .readFrom([registryUtxo])
+    .payToAddress(saleAddress, { lovelace: BigInt(priceLovelace) })
     .payToContract(
       counterAddress,
-      {
-        inline:
-          Data.to(
-            BigInt(n + 1),
-          ),
-      },
-      {
-        lovelace:
-          MIN_ADA_COUNTER,
-      },
+      { inline: Data.to(BigInt(n + 1)) },
+      { lovelace: MIN_ADA_COUNTER },
     )
-
-    // Prize UTxO Pending
-    // Data.to() chiamato UNA sola volta qui, sull'intero albero annidato.
     .payToContract(
       prizeAddress,
-      {
-        inline:
-          Data.to(prizeDatumConstr),
-      },
-      {
-        lovelace:
-          prizeFunding,
-      },
+      { inline: Data.to(prizeDatumConstr) },
+      { lovelace: prizeFunding },
     )
-
-    // Ticket al buyer
-    .payToAddress(
-      buyer,
-      {
-        [unit]: 1n,
-      },
-    )
-
+    .payToAddress(buyer, { [unit]: 1n })
     .addSigner(buyer)
-
     .complete()
 
-  const signed =
-    await lucid.signTx(tx)
-
-  const txHash =
-    await lucid.submitTx(signed)
+  const signed = await lucid.signTx(tx)
+  const txHash = await lucid.submitTx(signed)
 
   return {
     txHash,
@@ -783,16 +379,15 @@ export async function mintSerialNFT(
     assetId: unit,
     policyId: ticketPolicyId,
     ticketNonce,
-    playerSecretHex:
-      toHex(playerSecret),
+    playerSecretHex: toHex(playerSecret),
     playerCommitmentHex,
     commitmentHex,
     prizeAddress,
     counterAddress,
     registryAddress,
+    issuedAt: Number(issuedAtMs),
+    expiresAt: Number(expiresAtMs),
   }
 }
 
-export default {
-  mintSerialNFT,
-}
+export default { mintSerialNFT }
