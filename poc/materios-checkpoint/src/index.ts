@@ -78,7 +78,7 @@ async function main() {
     blockHash
   );
   const setId = decodeSetId(setIdHex);
-  results["[7] GRANDPA set_id"] = Number.isFinite(setId);
+  results["[7] GRANDPA set_id"] = typeof setId === "bigint";
   console.log("[7] set_id:", setId);
 
   // [8][9] checkpoint

@@ -1,91 +1,136 @@
-import { createHash } from "node:crypto";
-import type { GrandpaAuthority } from "./scale.js";
+/**
+ * CanonicalCheckpoint builder for PoC-0.
+ *
+ * Constructs the deterministic checkpoint object and JSON serialization.
+ *
+ * Properties:
+ * - Strict type enforcement
+ * - Deterministic serialization
+ * - SHA256 authority commitment
+ * - No silent truncation or rounding
+ */
 
-export type CanonicalCheckpoint = {
-  schema: "PRE-RICH/CanonicalCheckpoint/V0";
+import { createHash } from "node:crypto";
+import { GrandpaAuthority } from "./scale.js";
+
+export interface CanonicalCheckpointInput {
+  chainId: string;
+  specVersion: number;
+  specName: string;
+  blockNumber: bigint;
+  blockHash: string;
+  stateRoot: string;
+  parentHash: string;
+  setId: bigint;
+  authorities: GrandpaAuthority[];
+  rpcEndpoint: string;
+}
+
+export interface CanonicalCheckpointObject {
   chain_id: string;
-  /** PoC-0: head at query time — NOT yet f(roundId). */
-  binding: "finalized_head_at_query_time";
   runtime_spec_version: number;
   runtime_spec_name: string;
   checkpoint: {
-    block_number: number;
+    block_number: string;
     block_hash: string;
     state_root: string;
     parent_hash: string;
   };
   grandpa: {
-    set_id: number;
-    authorities: GrandpaAuthority[];
+    set_id: string;
+    authority_count: number;
+    authorities: Array<{
+      public_key: string;
+      weight: string;
+    }>;
     authority_commitment: string;
   };
-  meta: {
-    produced_at_utc: string;
+  extraction: {
     rpc_endpoint: string;
-    note: string;
+    timestamp_iso8601: string;
   };
-};
+}
 
 /**
- * Deterministic commitment over authority set.
- * Domain-separated; stable field order.
+ * Compute SHA256 hash of authority list.
+ *
+ * Deterministic commitment over:
+ * - count (compact)
+ * - each authority: public_key (32 bytes) + weight (u64 LE)
  */
-export function authorityCommitment(
-  setId: number,
+function authorityCommitment(
   authorities: GrandpaAuthority[]
 ): string {
-  const payload = [
-    "PRE-RICH/GRANDPA/AUTHORITY_COMMITMENT/V0",
-    String(setId),
-    ...authorities.map((a) => `${a.public_key}:${a.weight}`),
-  ].join("|");
+  const hash = createHash("sha256");
 
-  return (
-    "0x" + createHash("sha256").update(payload, "utf8").digest("hex")
-  );
+  // Encode count as compact
+  const count = authorities.length;
+  if (count === 0) {
+    hash.update(Buffer.from([0x00])); // compact 0
+  } else if (count < 64) {
+    hash.update(Buffer.from([count << 2]));
+  } else if (count < 16384) {
+    const b = Buffer.alloc(2);
+    b.writeUInt16LE(((count << 2) | 0x01) >>> 0);
+    hash.update(b);
+  } else {
+    // For larger counts, use 4-byte compact
+    const b = Buffer.alloc(4);
+    b.writeUInt32LE(((count << 2) | 0x02) >>> 0);
+    hash.update(b);
+  }
+
+  // Encode each authority
+  for (const auth of authorities) {
+    // Public key as hex
+    const pkHex = auth.public_key.startsWith("0x")
+      ? auth.public_key.slice(2)
+      : auth.public_key;
+    const pkBuffer = Buffer.from(pkHex, "hex");
+    hash.update(pkBuffer);
+
+    // Weight as u64 little-endian
+    const wBuffer = Buffer.alloc(8);
+    wBuffer.writeBigUInt64LE(auth.weight);
+    hash.update(wBuffer);
+  }
+
+  return "0x" + hash.digest("hex");
 }
 
-export function buildCheckpoint(args: {
-  chainId: string;
-  specVersion: number;
-  specName: string;
-  blockNumber: number;
-  blockHash: string;
-  stateRoot: string;
-  parentHash: string;
-  setId: number;
-  authorities: GrandpaAuthority[];
-  rpcEndpoint: string;
-}): CanonicalCheckpoint {
-  const commitment = authorityCommitment(args.setId, args.authorities);
+export function buildCheckpoint(
+  input: CanonicalCheckpointInput
+): CanonicalCheckpointObject {
+  const commitment = authorityCommitment(input.authorities);
 
   return {
-    schema: "PRE-RICH/CanonicalCheckpoint/V0",
-    chain_id: args.chainId,
-    binding: "finalized_head_at_query_time",
-    runtime_spec_version: args.specVersion,
-    runtime_spec_name: args.specName,
+    chain_id: input.chainId,
+    runtime_spec_version: input.specVersion,
+    runtime_spec_name: input.specName,
     checkpoint: {
-      block_number: args.blockNumber,
-      block_hash: args.blockHash,
-      state_root: args.stateRoot,
-      parent_hash: args.parentHash,
+      block_number: input.blockNumber.toString(),
+      block_hash: input.blockHash,
+      state_root: input.stateRoot,
+      parent_hash: input.parentHash,
     },
     grandpa: {
-      set_id: args.setId,
-      authorities: args.authorities,
+      set_id: input.setId.toString(),
+      authority_count: input.authorities.length,
+      authorities: input.authorities.map((a) => ({
+        public_key: a.public_key,
+        weight: a.weight.toString(),
+      })),
       authority_commitment: commitment,
     },
-    meta: {
-      produced_at_utc: new Date().toISOString(),
-      rpc_endpoint: args.rpcEndpoint,
-      note:
-        "PoC-0 evidence only. Not a finality proof. Not B3. Adapter is untrusted.",
+    extraction: {
+      rpc_endpoint: input.rpcEndpoint,
+      timestamp_iso8601: new Date().toISOString(),
     },
   };
 }
 
-/** Stable JSON for reproducibility checks (sorted keys via fixed structure). */
-export function serializeCheckpoint(cp: CanonicalCheckpoint): string {
-  return JSON.stringify(cp, null, 2) + "\n";
+export function serializeCheckpoint(
+  cp: CanonicalCheckpointObject
+): string {
+  return JSON.stringify(cp, null, 2);
 }

@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "poc0": "tsx src/index.ts",
-    "poc0:local": "MATERIOS_RPC=http://127.0.0.1:9945 tsx src/index.ts"
+    "poc0:local": "MATERIOS_RPC=http://127.0.0.1:9944 tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "mock": "MOCK_PORT=9955 tsx src/test-mock.ts",
+    "test": "MOCK_PORT=9955 tsx src/test-mock.ts > /tmp/mock.log 2>&1 & MOCK_PID=$!; sleep 2; MATERIOS_RPC=http://127.0.0.1:9955 MATERIOS_CHAIN_ID=materios_dev tsx src/index.ts; kill $MOCK_PID 2>/dev/null || true"
   },
   "dependencies": {
     "tsx": "^4.19.0",
