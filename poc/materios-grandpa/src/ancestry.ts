@@ -9,11 +9,14 @@ export interface HeaderLike {
 }
 
 /**
- * Returns true if candidateAncestor is the same block
- * as descendant or lies on its direct parent chain.
+ * Returns true if candidateAncestor is the same
+ * block as descendant or lies on its direct
+ * parent chain.
  *
- * The caller must provide the headers necessary to walk
- * the chain. We intentionally do not fetch anything here.
+ * The caller must provide the headers necessary
+ * to walk the chain.
+ *
+ * We intentionally do not fetch anything here.
  */
 export function isAncestor(
   descendant: HeaderLike,
@@ -27,7 +30,8 @@ export function isAncestor(
     return false;
   }
 
-  const headers = new Map<string, HeaderLike>();
+  const headers =
+    new Map<string, HeaderLike>();
 
   for (const header of knownHeaders) {
     headers.set(
@@ -77,7 +81,8 @@ function toHex(
 ): string {
   return Array.from(bytes)
     .map(
-      b => b.toString(16).padStart(2, "0")
+      b =>
+        b.toString(16).padStart(2, "0")
     )
     .join("");
 }

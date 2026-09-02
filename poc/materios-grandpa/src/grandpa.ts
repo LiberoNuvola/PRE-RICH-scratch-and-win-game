@@ -1,4 +1,7 @@
-import { concatBytes, encodeU64 } from "./scale.js";
+import {
+  concatBytes,
+  encodeU64
+} from "./scale.js";
 
 export interface GrandpaPrecommit {
   targetHash: Uint8Array;
@@ -20,6 +23,7 @@ export interface GrandpaCommit {
 export interface GrandpaJustification {
   round: bigint;
   commit: GrandpaCommit;
+  votesAncestries?: unknown[];
 }
 
 export function encodeLocalizedPrecommitPayload(
@@ -47,13 +51,21 @@ export function hasGrandpaQuorum(
     return false;
   }
 
+  if (signedWeight > totalWeight) {
+    return false;
+  }
+
   /*
-   * Strictly greater than 2/3.
+   * Strictly greater than 2/3:
    *
    * signed / total > 2 / 3
+   *
    * => 3 * signed > 2 * total
    *
    * Everything stays as bigint.
    */
-  return 3n * signedWeight > 2n * totalWeight;
+  return (
+    3n * signedWeight >
+    2n * totalWeight
+  );
 }

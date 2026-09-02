@@ -3,28 +3,49 @@ import * as ed25519 from "@noble/ed25519";
 export const ED25519_PUBLIC_KEY_LENGTH = 32;
 export const ED25519_SIGNATURE_LENGTH = 64;
 
-export function verifyEd25519(
+export interface Ed25519Verifier {
+  verify(
+    signature: Uint8Array,
+    message: Uint8Array,
+    publicKey: Uint8Array
+  ): boolean | Promise<boolean>;
+}
+
+export const nobleEd25519: Ed25519Verifier = {
+  verify(
+    signature: Uint8Array,
+    message: Uint8Array,
+    publicKey: Uint8Array
+  ): boolean {
+    return ed25519.verify(
+      signature,
+      message,
+      publicKey
+    );
+  }
+};
+
+export async function verifyEd25519(
+  verifier: Ed25519Verifier,
   publicKey: Uint8Array,
   signature: Uint8Array,
   message: Uint8Array
-): boolean {
+): Promise<boolean> {
   if (
-    publicKey.length !== ED25519_PUBLIC_KEY_LENGTH
+    publicKey.length !==
+    ED25519_PUBLIC_KEY_LENGTH
   ) {
-    throw new Error(
-      `invalid Ed25519 public key length: ${publicKey.length}`
-    );
+    return false;
   }
 
   if (
-    signature.length !== ED25519_SIGNATURE_LENGTH
+    signature.length !==
+    ED25519_SIGNATURE_LENGTH
   ) {
-    throw new Error(
-      `invalid Ed25519 signature length: ${signature.length}`
-    );
+    return false;
   }
 
-  return ed25519.verify(
+  return await verifier.verify(
     signature,
     message,
     publicKey

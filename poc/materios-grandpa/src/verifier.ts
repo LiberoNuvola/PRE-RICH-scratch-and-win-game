@@ -107,10 +107,11 @@ export async function verifyFinality(
   }
 
   /*
-   * PoC-1A deliberately gets set_id only from the
-   * trusted authority state.
+   * PoC-1A deliberately gets set_id only
+   * from trusted authority state.
    *
-   * There is no justification.setId field to trust.
+   * There is no justification.setId field
+   * to trust.
    */
   const setId = trusted.setId;
 
@@ -225,15 +226,16 @@ export async function verifyFinality(
   }
 
   /*
-   * IMPORTANT:
-   *
-   * A successful signature + quorum check is NOT enough
-   * for finality when ancestry verification has been requested.
+   * A successful signature + quorum check
+   * is NOT enough for finality when ancestry
+   * verification has been requested.
    */
   if (options.verifyAncestry) {
     /*
-     * Header decoding is not yet wired to Materios's actual
-     * Header type. Do not silently pass this check.
+     * Header decoding is not yet wired to
+     * Materios's actual Header type.
+     *
+     * Do not silently pass this check.
      */
     throw new VerificationError(
       "ANCESTRY_NOT_VERIFIED"

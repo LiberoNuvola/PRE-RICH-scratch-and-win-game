@@ -26,7 +26,10 @@ export function validateAuthorityState(
     throw new Error("INVALID_GENESIS_HASH");
   }
 
-  if (state.setId < 0n || state.setId > 0xffffffffffffffffn) {
+  if (
+    state.setId < 0n ||
+    state.setId > 0xffffffffffffffffn
+  ) {
     throw new Error("INVALID_SET_ID");
   }
 
@@ -45,14 +48,22 @@ export function validateAuthorityState(
       throw new Error("INVALID_AUTHORITY_WEIGHT");
     }
 
-    if (authority.weight > 0xffffffffffffffffn) {
-      throw new Error("AUTHORITY_WEIGHT_OVERFLOW");
+    if (
+      authority.weight >
+      0xffffffffffffffffn
+    ) {
+      throw new Error(
+        "AUTHORITY_WEIGHT_OVERFLOW"
+      );
     }
 
-    const id = bytesToHex(authority.publicKey);
+    const id =
+      bytesToHex(authority.publicKey);
 
     if (seen.has(id)) {
-      throw new Error("DUPLICATE_AUTHORITY");
+      throw new Error(
+        "DUPLICATE_AUTHORITY"
+      );
     }
 
     seen.add(id);
@@ -84,8 +95,12 @@ export function totalAuthorityWeight(
 
 export function authorityMap(
   state: TrustedAuthorityState
-): ReadonlyMap<string, GrandpaAuthority> {
-  const map = new Map<string, GrandpaAuthority>();
+): ReadonlyMap<
+  string,
+  GrandpaAuthority
+> {
+  const map =
+    new Map<string, GrandpaAuthority>();
 
   for (const authority of state.authorities) {
     map.set(
