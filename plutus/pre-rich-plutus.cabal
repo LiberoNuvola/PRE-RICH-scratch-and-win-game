@@ -10,9 +10,9 @@ library
         Beacon
         GameRules
         BeaconRegistry
+        B1PrizePool
         CounterValidator
         MintPolicy
-        PrizePool
         PrizeValidator
         Treasury
     build-depends:
@@ -38,9 +38,9 @@ executable export-scripts
         Beacon
         GameRules
         BeaconRegistry
+        B1PrizePool
         CounterValidator
         MintPolicy
-        PrizePool
         PrizeValidator
         Treasury
     build-depends:

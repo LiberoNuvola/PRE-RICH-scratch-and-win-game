@@ -1,0 +1,718 @@
+================================================================================
+  PRE-RICH B1 IMPLEMENTATION — MIMO AUDIT REPORT
+  Generated: 2026-09-04
+================================================================================
+
+1. SESSION / BASELINE
+================================================================================
+
+  Current git branch:  main
+  Current HEAD:        28c80de docs: consolidate PRE-RICH B1 protocol and game economy
+  Model used:          opencode/mimo-v2.5-free (Mimo v2.5)
+  Starting state:      HEAD at 28c80de with uncommitted B1 changes across 17 modified
+                       files and 3 untracked paths.
+
+  Files changed by this session (uncommitted):
+    MODIFIED   package.json
+    MODIFIED   plutus/Export.hs
+    MODIFIED   plutus/GameRules.hs
+    MODIFIED   plutus/MintPolicy.hs
+    MODIFIED   plutus/PrizeValidator.hs
+    MODIFIED   plutus/Treasury.hs
+    MODIFIED   plutus/Types.hs
+    MODIFIED   plutus/pre-rich-plutus.cabal
+    MODIFIED   src/claimFlow.ts
+    MODIFIED   src/config.ts
+    MODIFIED   src/gameFlow.ts
+    MODIFIED   src/gameRules.ts
+    MODIFIED   src/legacyBindings.ts
+    MODIFIED   src/loadValidator.ts
+    MODIFIED   src/main.ts
+    MODIFIED   src/mint.ts
+    MODIFIED   src/tickets.ts
+    NEW        docs/Game-Economy.md
+    NEW        plutus/B1PrizePool.hs
+    NEW        src/__tests__/b1-invariants.test.ts
+
+
+2. CHANGES BY FILE
+================================================================================
+
+2.1  plutus/Types.hs
+  What:     Added B1PrizePoolDatum (8 fields), B1PrizePoolAction (5 constructors),
+            pdPrizePoolHash/pdIssuedAt/pdExpiresAt to PrizeDatum, TreasuryDatum
+            (4 ScriptHash destinations), TreasuryAction.
+  Why:      B1 accounting requires a singleton PrizePool datum tracking
+            totalLiquidity, pendingLiabilities, unresolvedReserve, jackpot, etc.
+            PrizeDatum extended with pool linkage and time bounds.
+  B1 req:   Atomic PrizePool binding, time-bounded claims, protocol-controlled
+            Treasury distribution.
+  Status:   COMPLETE. 21 PrizeDatum fields (0-20). 8 B1PrizePoolDatum fields.
+
+2.2  plutus/B1PrizePool.hs  [NEW]
+  What:     360-line validator for the singleton B1PrizePool UTxO. Handles
+            FundTreasury, TicketIssued, TicketRevealed, TicketClaimed,
+            TicketExpired actions.
+  Why:      Central accounting hub — all ticket lifecycle events update this
+            datum atomically.
+  B1 req:   EffectivePool accounting, solvency invariant, jackpot threshold.
+  Status:   COMPLETE but see blockers (reservePerTicket/reseaseRelease are
+            redeemer-supplied, USDM/lovelace unit mixing).
+
+2.3  plutus/PrizeValidator.hs
+  What:     Extended from ~500 to 632 lines. Added pdPrizePoolHash parameter,
+            cross-validation of B1PrizePool input/output on Reveal and Claim,
+            owner signature check, claimBeforeExpiry, valuePreserved.
+  Why:      Atomicity: PrizeValidator must verify that the B1PrizePool is
+            updated consistently in the same transaction.
+  B1 req:   Exact Prize UTxO binding, pool accounting cross-validation,
+            double-claim prevention, expiry enforcement.
+  Status:   COMPLETE. Cross-validation present for both Reveal and Claim.
+
+2.4  plutus/MintPolicy.hs
+  What:     Added pdPrizePoolHash/pdIssuedAt/pdExpiresAt to PrizeDatum
+            construction validation. Requires BeaconRegistry ref input.
+            Removed sale payment validation (payment goes to Treasury).
+  Why:      B1 architecture: buyer pays Treasury, not a personal wallet.
+            MintPolicy only validates NFT + PrizeDatum creation.
+  B1 req:   Protocol-controlled payment, fresh PrizeDatum state.
+  Status:   PARTIAL. Does not validate pdPrizePoolHash correctness.
+
+2.5  plutus/GameRules.hs
+  What:     Added PrizeTable data type (5 tiers), defaultPrizeTable,
+            prizeAmountForTier formula, generateSymbols with rejection sampling.
+  Why:      On-chain symbol generation and prize calculation must match
+            off-chain computation deterministically.
+  B1 req:   Deterministic randomness, payout formula parity.
+  Status:   COMPLETE.
+
+2.6  plutus/Treasury.hs
+  What:     Rewritten from 169 to 87 lines. Distribute action: verify
+            threshold, verify percentage split sums to 10000, verify all
+            4 destinations are ScriptCredential addresses (not personal wallets).
+  Why:      B1 requires protocol-controlled Treasury with no personal wallet
+            intermediaries.
+  B1 req:   Protocol-controlled destinations, percentage distribution.
+  Status:   COMPLETE. Does NOT validate USDM sub-unit accounting.
+
+2.7  plutus/Export.hs
+  What:     Added B1PrizePool export as "b1PrizePoolFactory.plutus.json".
+            Updated description strings for B1 architecture.
+  Why:      Script factory compilation output.
+  B1 req:   B1PrizePool script must be compilable and exportable.
+  Status:   COMPLETE.
+
+2.8  plutus/pre-rich-plutus.cabal
+  What:     Added B1PrizePool to exposed-modules and other-modules.
+  Why:      Build system must include the new module.
+  Status:   COMPLETE.
+
+2.9  src/config.ts
+  What:     Added GENESIS_TICKET_PRICE_USDM = 100, TICKET_PAYMENT_LOVELACE
+            = 1_000_000. Renamed SALE_ADDRESS to deprecated TREASURY_ADDRESS.
+  Why:      B1 Genesis pricing in USDM sub-units, protocol-controlled Treasury.
+  B1 req:   USDM sub-unit convention, no personal sale wallets.
+  Status:   COMPLETE.
+
+2.10 src/gameFlow.ts
+  What:     778 lines. Added B1PrizePool lookup, revealPrize coordinates
+            PrizeValidator + B1PrizePool, claimPrize coordinates both.
+            SyncBeacon unchanged.
+  Why:      Off-chain transaction building must atomically spend both
+            PrizeValidator and B1PrizePool UTxOs.
+  B1 req:   Atomic Reveal and Claim transactions.
+  Status:   CRITICAL BUG: decodePrizeDatum checks fields.length !== 20 but
+            actual PrizeDatum has 21 fields (pdPrizePoolHash added). All
+            gameFlow functions that decode PrizeDatum will FAIL.
+
+2.11 src/gameRules.ts
+  What:     TypeScript mirror of GameRules.hs. PrizeTable, prizeAmountForTier,
+            classifyTier, generateSymbols (async mirror).
+  Why:      Off-chain computation must match on-chain logic.
+  Status:   COMPLETE.
+
+2.12 src/loadValidator.ts
+  What:     Added buildB1PrizePool(), updated buildPrizeValidator() with 3
+            params (registry, prizePool, table). Added buildScriptsFromLucid()
+            with iterative convergence for circular PrizeValidator<->B1PrizePool
+            dependency.
+  Why:      Circular script hash dependency resolution.
+  B1 req:   Both validators reference each other's ScriptHash.
+  Status:   PARTIAL. Uses placeholder b1PrizePoolFactory.plutus.json import
+            (line 32: imports prizePool.plutus.json as fallback).
+
+2.13 src/mint.ts
+  What:     Updated buildPrizeDatumConstr to include pdPrizePoolHash (field 18),
+            pdIssuedAt (19), pdExpiresAt (20). 21 fields total.
+  Why:      PrizeDatum must carry pool linkage and time bounds.
+  Status:   COMPLETE.
+
+2.14 src/tickets.ts
+  What:     Updated buyTickets to use mintSerialNFT. Documents non-atomic
+            mint + Treasury payment limitation.
+  Status:   COMPLETE.
+
+2.15 src/claimFlow.ts
+  What:     Legacy claim flow. Uses old PrizeDatum format (no B1PrizePool).
+  Why:      Kept for backward compatibility.
+  Status:   NOT UPDATED for B1. Does not coordinate B1PrizePool.
+
+2.16 src/legacyBindings.ts
+  What:     UI bindings. Still imports old claim module.
+  Status:   PARTIAL. Not updated for B1.
+
+2.17 src/main.ts
+  What:     Minor import changes.
+  Status:   COMPLETE.
+
+2.18 docs/Game-Economy.md  [NEW]
+  What:     1206-line economic specification document.
+  Status:   DOCUMENTED ONLY.
+
+2.19 src/__tests__/b1-invariants.test.ts  [NEW]
+  What:     987-line test file with pure mirror tests for B1PrizePool state
+            transitions, solvency, jackpot, tier classification, payouts.
+  Status:   PARTIAL. Many critical invariants are "assert.ok(true)" placeholders.
+
+
+3. B1 ECONOMIC MODEL
+================================================================================
+
+  Genesis price and USDM sub-unit convention:
+    1 USDM = 100 sub-units (Integer on-chain).
+    Genesis ticket: pdPriceUsdm = 100.
+    ADA settlement: TICKET_PAYMENT_LOVELACE = 1_000_000 (1 ADA on Preprod).
+    The two unit systems are INDEPENDENT. Payouts are in USDM sub-units.
+    ADA settlement is in lovelace. They must not be mixed in arithmetic.
+
+  Ticket classes (pdPriceUsdm sub-units):
+    Genesis:    100  (1.00 USDM)
+    Class 1:    200  (2.00 USDM)
+    Class 2:    300  (3.00 USDM)
+    Class 3:    500  (5.00 USDM)
+    Class 4:   1000  (10.00 USDM)
+    Class 5:   2500  (25.00 USDM)
+    Class 6:   5000  (50.00 USDM)
+    Class 7:  10000  (100.00 USDM)
+
+  Payout table (defaultPrizeTable):
+    Tier 0 (loss): base=0,  payout = 0
+    Tier 1 (3+ of sym 1): base=2,    payout = base * priceUsdm / 2
+    Tier 2 (3+ of sym 2): base=5,    payout = base * priceUsdm / 2
+    Tier 3 (3+ of sym 3): base=10,   payout = base * priceUsdm / 2
+    Tier 4 (3+ of sym 4): base=200,  payout = base * priceUsdm / 2
+    Tier 5 (3+ of sym 5): base=1000, payout = base * priceUsdm / 2
+
+    Genesis examples:
+      Tier 1: 2*100/2 = 100 sub-units (1.00 USDM)
+      Tier 2: 5*100/2 = 250 sub-units (2.50 USDM)
+      Tier 3: 10*100/2 = 500 sub-units (5.00 USDM)
+      Tier 4: 200*100/2 = 10000 sub-units (100.00 USDM)
+      Tier 5: 1000*100/2 = 50000 sub-units (500.00 USDM)
+
+  EffectivePool:
+    effectivePool = totalLiquidity - pendingLiabilities - unresolvedReserve
+                    - lockedJackpot
+    Must be >= 0 at all times (solvency invariant).
+    Jackpot is active when effectivePool >= jackpotThreshold.
+
+  Pending liabilities (ppPendingLiabilities):
+    Sum of crystallised, unclaimed winning payouts.
+    Increases on TicketRevealed (by payout amount).
+    Decreases on TicketClaimed (by claimedAmount).
+    Tracked in USDM sub-units (same unit as pdPrizeAmount).
+
+  Unresolved reserve (ppUnresolvedReserve):
+    Reserve locked for unrevealed tickets: count * reservePerTicket.
+    Increases on TicketIssued (+ reservePerTicket).
+    Decreases on TicketRevealed (- reserveRelease).
+    Decreases on TicketExpired (- reservePerTicket from average).
+
+  Jackpot (ppLockedJackpot):
+    Liquidity locked for jackpot. Subtracted from effectivePool.
+    Threshold: ppJackpotThreshold. Active when effectivePool >= threshold.
+    NOTE: Jackpot LOCK/WIN mechanisms are NOT implemented on-chain yet.
+          Only the accounting fields exist.
+
+  Circuit breaker (ppSuspendedClasses):
+    Bitmask: bit 0 = Genesis, bit 7 = Class 7 (100 USDM).
+    1 = suspended, 0 = active.
+    Higher classes suspended first as solvency drops.
+    NOTE: Circuit breaker ENFORCEMENT is NOT implemented in B1PrizePool
+          validator. The field exists but no action checks it.
+
+  Treasury flow:
+    TreasuryDatum has 4 ScriptHash destinations:
+      tdPrizeScriptHash    -> PrizePool (receives prize allocation)
+      tdStakeScriptHash    -> Stake (receives stake allocation)
+      tdReserveScriptHash  -> Reserve (receives reserve allocation)
+      tdMaintenanceScriptHash -> Maintenance
+    Percentages sum to 10000 (basis points).
+    Threshold: minimum lovelace before distribution is allowed.
+    All destinations MUST be ScriptCredential (protocol-controlled).
+    Treasury does NOT validate USDM sub-units — it distributes lovelace.
+
+
+4. TICKET LIFECYCLE
+================================================================================
+
+  The implemented flow (B1):
+
+  Mint (MintPolicy.hs + mint.ts)
+    - Counter UTxO consumed, advanced n -> n+1.
+    - Serial NFT minted with name = counter value.
+    - PrizeDatum created at PrizeValidator with status=Pending,
+      beaconStatus=BeaconPending, pdPrizePoolHash set.
+    - Ticket NFT sent to buyer.
+    - NO Treasury payment in this tx (non-atomic limitation).
+
+  Pending / BeaconPending
+    - Ticket exists but beacon R not yet synced.
+    - No economic action possible.
+
+  Beacon Sync (PrizeValidator validateSyncBeacon)
+    - Reads BeaconRegistry reference input.
+    - Copies R (beacon value), mcHash, materiosContext from registry.
+    - Transitions: beaconStatus BeaconPending -> BeaconReady.
+    - PrizeDatum status stays Pending.
+    - Value preserved.
+
+  Reveal (PrizeValidator validateReveal)
+    - Player reveals playerSecret.
+    - On-chain: re-derives beacon, playerCommitment, ticketCommitment,
+      symbols (via rejection sampling), tier, payout.
+    - Transitions: status Pending -> Revealed, result/tier/amount frozen.
+    - B1PrizePool: unresolvedTicketCount - 1, unresolvedReserve - release,
+      pendingLiabilities + payout.
+    - Cross-validated: PrizeValidator reads B1PrizePool input/output via
+      pdPrizePoolHash and verifies accounting consistency.
+    - Allowed even after expiry (historical result recording).
+
+  Revealed
+    - Payout crystallised. Claim window open until pdExpiresAt.
+
+  Claim (PrizeValidator validateClaim)
+    - Owner proves via ticket NFT ownership + signature.
+    - Pays pdPrizeAmount lovelace to owner.
+    - Transitions: status Revealed -> Claimed.
+    - NFT NOT burned (constitution: keep as proof).
+    - B1PrizePool: totalLiquidity - payout, pendingLiabilities - payout.
+    - Cross-validated: PrizeValidator reads B1PrizePool input/output.
+    - Expiry enforced: tx validity range must end <= pdExpiresAt.
+
+  Claimed
+    - Economic right exercised once. Ticket NFT retained.
+    - No further economic action possible (status gate).
+
+  Expiry (B1PrizePool TicketExpired)
+    - For unrevealed tickets past pdExpiresAt.
+    - B1PrizePool: unresolvedTicketCount - 1, unresolvedReserve - reservePerTicket.
+    - PrizeDatum input must have status=Pending, payout=0.
+    - PrizeDatum output: status stays Pending (or consumed entirely).
+
+
+5. TRANSACTION TOPOLOGY
+================================================================================
+
+5.1  Ticket Issuance
+
+  Inputs:
+    - Counter UTxO (datum: n)
+    - BeaconRegistry UTxO (reference input, datum: round pending)
+
+  Reference inputs:
+    - BeaconRegistry UTxO
+
+  Outputs:
+    - Counter UTxO (datum: n+1, min ADA)
+    - Prize UTxO (PrizeDatum with 21 fields, status=Pending,
+      beaconStatus=BeaconPending, pdPrizePoolHash set)
+    - Ticket NFT to buyer
+
+  Validators:
+    - CounterValidator (spending, verifies n -> n+1)
+    - MintPolicy (minting, verifies serial NFT + PrizeDatum + registry)
+
+  Datum transitions:
+    Counter: n -> n+1
+    PrizeDatum: created fresh (no prior datum)
+
+  Ticket identity binding:
+    tokenName = counter value n (as ASCII string).
+    pdTicketPolicy = mintPolicyId.
+    pdTicketName = tokenNameHex.
+    pdCommitment = sha256(ticketId || playerCommitment || gameVersion ||
+                          ticketNonce || priceUsdm || beaconTarget).
+
+  PrizePool update:
+    NONE in this tx. B1PrizePool is NOT spent or updated during mint.
+    (Non-atomic limitation: Treasury payment is separate.)
+
+  Atomic: YES for NFT + PrizeDatum creation. NO for Treasury payment.
+
+5.2  Reveal
+
+  Inputs:
+    - Prize UTxO (PrizeDatum, status=Pending, beaconStatus=BeaconReady)
+    - B1PrizePool UTxO (B1PrizePoolDatum)
+    - Ticket NFT UTxO (in owner's wallet, for signing)
+
+  Reference inputs:
+    - (none required for reveal itself)
+
+  Outputs:
+    - Prize UTxO (PrizeDatum, status=Revealed, result/tier/amount frozen)
+    - B1PrizePool UTxO (updated accounting)
+    - Ticket NFT back to owner
+
+  Validators:
+    - PrizeValidator (spending, verifies reveal logic + pool cross-validation)
+    - B1PrizePool (spending, verifies TicketRevealed accounting)
+
+  Datum transitions:
+    PrizeDatum: Pending -> Revealed (result, tier, prizeAmount frozen)
+    B1PrizePoolDatum: unresolvedTicketCount - 1, unresolvedReserve - release,
+                      pendingLiabilities + payout
+
+  Ticket identity binding:
+    pdTicketPolicy + pdTicketName match the NFT being spent.
+    Owner identified via ticket NFT in inputs (PubKeyCredential).
+
+  PrizePool update:
+    B1PrizePool spent and re-created with updated accounting.
+    PrizeValidator cross-validates the pool output.
+
+  Atomic: YES. Both validators execute in the same transaction.
+
+5.3  Claim
+
+  Inputs:
+    - Prize UTxO (PrizeDatum, status=Revealed, prizeAmount > 0)
+    - B1PrizePool UTxO (B1PrizePoolDatum)
+    - Ticket NFT UTxO (in owner's wallet, to prove ownership)
+
+  Reference inputs:
+    - (none)
+
+  Outputs:
+    - Prize UTxO (PrizeDatum, status=Claimed)
+    - B1PrizePool UTxO (updated accounting)
+    - Payout lovelace to owner
+    - Ticket NFT back to owner (NOT burned)
+
+  Validators:
+    - PrizeValidator (spending, verifies owner sig, claim, pool cross-validation)
+    - B1PrizePool (spending, verifies TicketClaimed accounting)
+
+  Datum transitions:
+    PrizeDatum: Revealed -> Claimed (no field changes except status)
+    B1PrizePoolDatum: totalLiquidity - payout, pendingLiabilities - payout
+
+  Ticket identity binding:
+    Ticket NFT in inputs identifies owner. Owner must sign.
+
+  PrizePool update:
+    B1PrizePool spent and re-created. PrizeValidator cross-validates.
+
+  Atomic: YES. Both validators execute in the same transaction.
+
+5.4  Expiry
+
+  Inputs:
+    - Prize UTxO (PrizeDatum, status=Pending, payout=0)
+    - B1PrizePool UTxO (B1PrizePoolDatum)
+
+  Reference inputs:
+    - (none)
+
+  Outputs:
+    - Prize UTxO (PrizeDatum, status=Pending unchanged)
+    - B1PrizePool UTxO (count - 1, reserve - reservePerTicket)
+
+  Validators:
+    - B1PrizePool (spending, verifies TicketExpired)
+
+  Datum transitions:
+    PrizeDatum: unchanged (Pending stays Pending)
+    B1PrizePoolDatum: unresolvedTicketCount - 1, unresolvedReserve - reservePerTicket
+
+  Atomic: YES.
+
+
+6. SECURITY / TRUSTLESSNESS AUDIT
+================================================================================
+
+  exact Prize UTxO binding:
+    YES — PrizeValidator uses pdPrizePoolHash to locate B1PrizePool UTxO,
+    findB1PrizePoolOutput/readPoolInput verify it exists as input+output.
+    PrizeValidator also verifies the Prize output via findSingleContinuing.
+
+  singleton PrizePool enforcement:
+    PARTIAL — findSingleContinuingDatum in B1PrizePool ensures exactly one
+    output to the same script. But there is no on-chain check that only one
+    B1PrizePool UTxO exists globally. An attacker could create a second
+    PrizePool UTxO at the same address. The singleton property relies on
+    the off-chain builder selecting the correct UTxO.
+
+  payout <= EffectivePool:
+    NO — The B1PrizePool validator does NOT explicitly check that
+    ppPendingLiabilities + payout <= ppTotalLiquidity - unresolvedReserve.
+    It relies on solvencyInvariant post-condition. A payout that breaks
+    solvency would be caught by solvencyInvariant on the output datum.
+    This IS enforced: solvencyInvariant checks effectivePool >= 0 on next.
+
+  deterministic reserve accounting:
+    PARTIAL — On TicketIssued, reservePerTicket is redeemer-supplied (only
+    checked > 0). On TicketRevealed, reserveRelease is redeemer-supplied
+    (only checked >= 0). The off-chain code computes correct values, but
+    a malicious tx could supply different values. The solvencyInvariant
+    constrains the damage but does not enforce protocol-correct values.
+
+  no arbitrary transaction-supplied accounting:
+    NO — reservePerTicket (TicketIssued) and reserveRelease (TicketRevealed)
+    are supplied by the transaction. The on-chain code cannot derive them
+    from protocol state. This is a trustless-accounting gap.
+
+  no USDM/lovelace unit mixing:
+    NO — B1PrizePoolDatum fields are documented as lovelace (ppTotalLiquidity
+    comment: "Total ADA held by the PrizePool (lovelace)"), but payouts
+    (pdPrizeAmount) are in USDM sub-units. FundTreasury measures actual
+    lovelace increase. TicketClaimed subtracts USDM sub-units from
+    totalLiquidity. This only works when 1 ADA ≈ 1 USDM. On mainnet with
+    a different rate, conversion is required.
+
+  owner authorization:
+    YES — validateClaim checks ticket NFT owner via ticketOwnerPkh and
+    verifies pkElem pkh (txInfoSignatories info).
+
+  double-claim prevention:
+    YES — PrizeDatum status transitions Pending -> Revealed -> Claimed.
+    Claim requires status == Revealed. After claim, status == Claimed,
+    and claim check fails.
+
+  NFT retention:
+    YES — Constitution: NFT is NOT burned on claim. Ticket NFT returns
+    to owner. validateClaim does not require a burn mint.
+
+  expiry enforcement:
+    YES — claimBeforeExpiry checks tx validity range upper bound <=
+    pdExpiresAt. Expired tickets cannot be claimed.
+
+  randomness / rejection sampling:
+    YES — generateSymbols uses SHA-256 + rejection sampling (byte 255
+    rejected). Deterministic from symbolsSeed. Same logic in Plutus and
+    TypeScript.
+
+  commitment binding:
+    YES — ticketCommitment binds ticketId, playerCommitment, gameVersion,
+    ticketNonce, priceUsdm, beaconTarget via SHA-256. Verified on-chain
+    in validateReveal. Player commitment verified against playerSecret.
+
+  jackpot accounting:
+    PARTIAL — Fields exist (ppLockedJackpot, ppJackpotThreshold). The
+    jackpotActive helper computes threshold check. But no action on-chain
+    actually modifies ppLockedJackpot or triggers jackpot payouts.
+    Jackpot is ACCOUNTED but NOT IMPLEMENTED.
+
+  circuit breaker enforcement:
+    NO — ppSuspendedClasses bitmask field exists in B1PrizePoolDatum.
+    But NO validator action checks or modifies this field. It is
+    DOCUMENTED ONLY.
+
+  Treasury protocol-controlled destinations:
+    YES — TreasuryDatum stores 4 ScriptHash destinations. Treasury
+    validator verifies all outputs go to ScriptCredential addresses
+    matching the datum. No personal wallet destinations allowed.
+
+
+7. TESTS
+================================================================================
+
+  Test files:
+    src/__tests__/b1-invariants.test.ts (987 lines)
+
+  What they actually test:
+    - Genesis price constants (GENESIS_TICKET_PRICE_USDM, TICKET_PAYMENT_LOVELACE)
+    - PrizeTable payout calculations for all tiers
+    - Symbol generation: length, range, determinism
+    - Tier classification: all cases
+    - EffectivePool formula
+    - Jackpot activation threshold
+    - Suspended classes bitmask logic
+    - B1PrizePool state transitions (TypeScript mirror):
+      TicketIssued, TicketRevealed, TicketClaimed, TicketExpired
+    - Solvency invariant
+    - Full lifecycle test (10 tickets: reveal, claim, solvency)
+    - USDM/lovelace unit boundary documentation
+    - Domain separation
+
+  What is only assert.ok(true) / documentation:
+    - MintPolicy validates counter advance and NFT mint (line 903)
+    - B1PrizePool validates PrizeDatum output exists at prizeHash (line 908)
+    - PrizeValidator verifies owner signature via ticket NFT (line 913)
+    - PrizeValidator enforces claimBeforeExpiry (line 918)
+    - B1PrizePool enforces valuePreserved (line 923)
+    - NFT is NOT burned on claim (line 928)
+    - Single claim enforced by status transition (line 933)
+    - reservePerTicket validation (line 941) — FLAGGED as trustless gap
+    - reserveRelease validation (line 950) — FLAGGED as trustless gap
+    - PrizeValidator cross-validates B1PrizePool on Reveal (line 958)
+    - PrizeValidator cross-validates B1PrizePool on Claim (line 968)
+    - B1PrizePool validates PrizeDatum input status before transition (line 978)
+
+  Build/compile status:
+    Cannot verify — no Haskell build environment or npm test script configured.
+    package.json has no "test" script. Node test runner requires:
+      npx tsx src/__tests__/b1-invariants.test.ts
+
+  Test status:
+    Pure mirror tests should pass (TypeScript-only, no Plutus dependency).
+    Emulator-only tests are documented placeholders.
+
+  Known failures:
+    gameFlow.ts:decodePrizeDatum will fail for any real PrizeDatum
+    (expects 20 fields, actual is 21).
+
+
+8. REMAINING B1 BLOCKERS
+================================================================================
+
+  1.  CRITICAL — gameFlow.ts PrizeDatum field count mismatch
+      File:    src/gameFlow.ts:225
+      Function: decodePrizeDatum()
+      Issue:   Checks fields.length !== 20, but PrizeDatum has 21 fields
+               (pdPrizePoolHash was added at index 18, shifting pdIssuedAt
+               to 19 and pdExpiresAt to 20).
+      Effect:  ALL gameFlow functions (syncBeacon, revealPrize, claimPrize)
+               will throw "PrizeDatum not decodable" on any real PrizeDatum.
+      Fix:     Change check to fields.length !== 21. Update field index
+               comments at lines 195-215.
+
+  2.  CRITICAL — USDM/lovelace unit mixing in B1PrizePool
+      File:    plutus/B1PrizePool.hs (all actions), plutus/Types.hs:168
+      Issue:   ppTotalLiquidity is documented as lovelace ("Total ADA held"),
+               but TicketClaimed subtracts USDM sub-units (pdPrizeAmount)
+               from it. FundTreasury adds actual lovelace. These are
+               different unit systems. The arithmetic only works when
+               1 ADA ≈ 1 USDM.
+      Effect:  On mainnet with a different ADA/USDM rate, accounting will
+               be incorrect. Payouts will not match ADA value.
+      Fix:     Either (a) change all B1PrizePoolDatum fields to USDM sub-units
+               and add a conversion layer at Treasury/Claim, or (b) change
+               payout calculation to produce lovelace directly.
+
+  3.  HIGH — reservePerTicket is redeemer-supplied (TicketIssued)
+      File:    plutus/B1PrizePool.hs:227-249
+      Issue:   reservePerTicket comes from the redeemer. On-chain only
+               checks > 0. A malicious tx could supply an artificially
+               low or high reservePerTicket, manipulating pool accounting.
+      Effect:  Trustless-accounting gap. Pool solvency may be maintained
+               but reserve accuracy is not guaranteed.
+      Fix:     Derive reservePerTicket from protocol config on-chain, or
+               require it to match pdPriceUsdm * some protocol constant.
+
+  4.  HIGH — reserveRelease is redeemer-supplied (TicketRevealed)
+      File:    plutus/B1PrizePool.hs:252-273
+      Issue:   reserveRelease comes from the redeemer. On-chain only
+               checks >= 0. Same trustless-accounting gap as #3.
+      Effect:  Reserve accounting may drift from actual values.
+      Fix:     Derive from ppUnresolvedReserve / ppUnresolvedTicketCount
+               on-chain, or enforce via protocol constant.
+
+  5.  HIGH — B1PrizePool not spending PrizeDatum input on status check
+      File:    plutus/B1PrizePool.hs (TicketRevealed, TicketClaimed,
+               TicketExpired)
+      Issue:   B1PrizePool validator does NOT read the PrizeDatum INPUT
+               status. It only checks the OUTPUT PrizeDatum status (via
+               findPrizeOutput). This means:
+               - TicketRevealed: output must be Revealed (correct)
+               - TicketClaimed: output must be Claimed (correct)
+               - But it doesn't verify the INPUT was in the right state.
+      Effect:  Could allow a PrizeDatum that was already Revealed to be
+               "re-revealed" if the B1PrizePool doesn't check input state.
+               However, PrizeValidator DOES check input status, and both
+               validators execute atomically, so this is mitigated.
+      Fix:     Add input PrizeDatum status checks to B1PrizePool for
+               defense-in-depth.
+
+  6.  HIGH — loadValidator.ts uses placeholder B1PrizePool script
+      File:    src/loadValidator.ts:32
+      Issue:   import b1PrizePoolFactoryJson from './plutusScripts/prizePool.plutus.json'
+               This is a placeholder import. The actual b1PrizePoolFactory.plutus.json
+               must be generated by `cabal run export-scripts`.
+      Effect:  B1PrizePool script will be wrong or missing at runtime.
+      Fix:     Generate the actual script JSON and update the import path.
+
+  7.  MEDIUM — MintPolicy does not validate pdPrizePoolHash
+      File:    plutus/MintPolicy.hs:247-317 (newPrizeDatumValid)
+      Issue:   pdPrizePoolHash is set in the PrizeDatum but MintPolicy
+               does not verify it matches the actual B1PrizePool ScriptHash.
+      Effect:  A malicious mint could set pdPrizePoolHash to any value,
+               creating a ticket that can never be revealed/claimed
+               (PrizeValidator cross-validation will fail).
+      Fix:     Add pdPrizePoolHash validation in newPrizeDatumValid.
+
+  8.  MEDIUM — Treasury does not validate USDM sub-unit amounts
+      File:    plutus/Treasury.hs:40-74
+      Issue:   Treasury distributes lovelace by percentage. It does not
+               validate that the amounts are in USDM sub-units or that
+               they match the expected USDM denomination.
+      Effect:  Treasury distribution is in lovelace, PrizePool expects
+               USDM sub-units. Conversion must happen off-chain.
+      Fix:     Add USDM denomination validation or conversion mechanism.
+
+  9.  MEDIUM — claimFlow.ts not updated for B1
+      File:    src/claimFlow.ts:78-131 (claimPrizeAuto)
+      Issue:   Legacy claim flow does not coordinate B1PrizePool. Uses
+               old PrizeDatum format. Does not spend B1PrizePool UTxO.
+      Effect:  claimPrizeAuto will fail on-chain (PrizeValidator requires
+               B1PrizePool cross-validation).
+      Fix:     Update claimPrizeAuto to include B1PrizePool spending,
+               or deprecate in favor of gameFlow.claimPrize.
+
+  10. MEDIUM — No test script in package.json
+       File:   package.json
+       Issue:  No "test" script defined. Tests must be run manually via
+               npx tsx src/__tests__/b1-invariants.test.ts.
+       Fix:    Add "test": "tsx src/__tests__/b1-invariants.test.ts" to
+               package.json scripts.
+
+  11. LOW — B1PrizePool singleton not enforced globally
+       File:   plutus/B1PrizePool.hs:62-96
+       Issue:  findSingleContinuingDatum ensures exactly one output to
+               the same script in a single tx. But nothing prevents
+               creating multiple B1PrizePool UTxOs across different txs.
+       Effect: Off-chain builder must ensure singleton. Multiple pools
+               would fragment accounting.
+       Fix:    On-chain singleton enforcement via a minted NFT or
+               protocol-level uniqueness check.
+
+  12. LOW — Circuit breaker (ppSuspendedClasses) not enforced
+       File:   plutus/B1PrizePool.hs (all actions), Types.hs:184
+       Issue:  Field exists but no action reads or modifies it.
+       Effect: Ticket classes cannot be suspended on-chain.
+       Fix:    Add suspension checks to TicketIssued action.
+
+  13. LOW — Jackpot lock/win not implemented
+       File:   plutus/B1PrizePool.hs, Types.hs:177-180
+       Issue:  ppLockedJackpot and ppJackpotThreshold exist but no
+               action implements jackpot payout or lock mechanism.
+       Effect: Jackpot is tracked but never triggers.
+       Fix:    Implement jackpot actions (JackpotLocked, JackpotWon).
+
+
+9. RECOMMENDED NEXT STEP
+================================================================================
+
+  Fix the CRITICAL PrizeDatum field count mismatch in gameFlow.ts:
+  change decodePrizeDatum to expect 21 fields (not 20) and update the
+  field index comments. This is the single change that unblocks all
+  off-chain B1 Reveal and Claim flows.
+
+  After that, resolve the USDM/lovelace unit mixing by deciding whether
+  B1PrizePoolDatum fields operate in USDM sub-units or lovelace, and
+  making all arithmetic consistent.
+
+================================================================================
+  END OF REPORT
+================================================================================

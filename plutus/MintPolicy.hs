@@ -109,18 +109,6 @@ hasNextCounterOutput sh n info =
         _ ->
           go rest
 
-{-# INLINABLE lovelacePaidTo #-}
-lovelacePaidTo :: PubKeyHash -> [TxOut] -> Integer
-lovelacePaidTo _ [] = 0
-lovelacePaidTo pkh (out:rest) =
-  case addressCredential (txOutAddress out) of
-    PubKeyCredential outPkh
-      | outPkh == pkh ->
-          valueLovelace (txOutValue out)
-            + lovelacePaidTo pkh rest
-    _ ->
-      lovelacePaidTo pkh rest
-
 {-# INLINABLE ownMintEntries #-}
 ownMintEntries
   :: CurrencySymbol
@@ -328,13 +316,26 @@ newPrizeDatumValid
             && freshStateOk
             && roundNotYetRevealedOk
 
+-- | Mint policy for PRE-RICH serial NFT tickets.
+--
+-- B1 architecture: buyer pays Treasury (protocol-controlled), not a personal
+-- wallet. The MintPolicy does NOT validate the payment destination — that is
+-- enforced by the Treasury validator. The MintPolicy only validates:
+--   1. Exactly one serial NFT minted with correct name
+--   2. Counter UTxO advanced n → n+1
+--   3. PrizeDatum output is valid (fresh state, correct commitment)
+--   4. BeaconRegistry round not yet revealed
+--
+-- Payment to Treasury is a separate transaction that must occur before or
+-- atomically with the mint. See Game-Economy.md §9 and §10.
+--
+-- Constitutional requirement: no player payment may be routed through a
+-- team-controlled personal wallet (Game-Economy.md §9).
 {-# INLINABLE mkPolicy #-}
 mkPolicy
   :: ScriptHash
   -> ScriptHash
   -> ScriptHash
-  -> PubKeyHash
-  -> Integer
   -> ()
   -> ScriptContext
   -> Bool
@@ -342,8 +343,6 @@ mkPolicy
   counterHash
   prizeHash
   regHash
-  salePkh
-  priceLovelace
   _
   ctx
   | isExactSingleBurn ownCs minted =
@@ -373,12 +372,6 @@ mkPolicy
                     n
                     info
 
-                paidEnough =
-                  lovelacePaidTo
-                    salePkh
-                    (txInfoOutputs info)
-                    >= priceLovelace
-
                 prizeOk =
                   newPrizeDatumValid
                     prizeHash
@@ -395,10 +388,6 @@ mkPolicy
                 && traceIfFalse
                      "counter UTxO was not advanced to n+1"
                      counterAdvanced
-
-                && traceIfFalse
-                     "sale payment insufficient"
-                     paidEnough
 
                 && traceIfFalse
                      "prize utxo invalid or round already revealed"
@@ -425,19 +414,15 @@ wrap
   :: ScriptHash
   -> ScriptHash
   -> ScriptHash
-  -> PubKeyHash
-  -> Integer
   -> BuiltinData
   -> BuiltinData
   -> BuiltinUnit
-wrap counterHash prizeHash regHash pkh price r ctx =
+wrap counterHash prizeHash regHash r ctx =
   check
     ( mkPolicy
         counterHash
         prizeHash
         regHash
-        pkh
-        price
         (unsafeFromBuiltinData r)
         (unsafeFromBuiltinData ctx)
     )
@@ -447,8 +432,6 @@ compiledPolicyFactory
        ( ScriptHash
          -> ScriptHash
          -> ScriptHash
-         -> PubKeyHash
-         -> Integer
          -> BuiltinData
          -> BuiltinData
          -> BuiltinUnit

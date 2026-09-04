@@ -1,24 +1,20 @@
 // src/tickets.ts
 import wallet from './wallet'
 import { mintSerialNFT } from './mint'
-import {
-  COUNTER_SCRIPT_ADDRESS,
-  SALE_ADDRESS,
-  TICKET_PRICE_LOVELACE,
-} from './config'
+import { COUNTER_SCRIPT_ADDRESS } from './config'
 
 /**
- * Flusso unico: per ogni ticket richiede mint on-chain
- * (pagamento al sale address incluso nella tx di mint).
+ * B1 buy flow: each ticket requires a separate mint transaction.
  *
- * Nota: oggi 1 mint = 1 NFT seriale seriale
- * (il counter avanza di 1).
- * qty > 1 = più transazioni in sequenza.
+ * The mint transaction creates the NFT and PrizeDatum.
+ * The buyer MUST separately pay the Treasury in another transaction.
+ *
+ * Atomicity limitation: mint + Treasury payment are NOT atomic.
+ * See Game-Economy.md §9, §10.
+ *
+ * qty > 1 = multiple sequential transactions (one per ticket).
  */
-export async function buyTickets(
-  saleAddress: string = SALE_ADDRESS,
-  lovelacePerTicket: number = TICKET_PRICE_LOVELACE,
-) {
+export async function buyTickets(qty: number = 1) {
   const lucid = wallet.getLucid()
 
   if (!lucid) {
@@ -27,26 +23,11 @@ export async function buyTickets(
 
   if (!COUNTER_SCRIPT_ADDRESS) {
     throw new Error(
-      'COUNTER_SCRIPT_ADDRESS non configurato in config/.env',
+      'COUNTER_SCRIPT_ADDRESS not configured in config/.env',
     )
   }
 
-  if (!saleAddress) {
-    throw new Error('SALE_ADDRESS non configurato')
-  }
-
-  const qtyStr = window.prompt(
-    'How many tickets do you want to buy?',
-    '1',
-  )
-
-  if (!qtyStr) {
-    throw new Error('Purchase cancelled')
-  }
-
-  const qty = parseInt(qtyStr, 10)
-
-  if (Number.isNaN(qty) || qty <= 0) {
+  if (qty <= 0) {
     throw new Error('Invalid quantity')
   }
 
@@ -57,11 +38,7 @@ export async function buyTickets(
   }> = []
 
   for (let i = 0; i < qty; i++) {
-    const r = await mintSerialNFT({
-      saleAddress,
-      priceLovelace: lovelacePerTicket,
-    })
-
+    const r = await mintSerialNFT({})
     results.push(r)
   }
 

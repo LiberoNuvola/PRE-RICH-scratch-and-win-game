@@ -10,7 +10,6 @@ import adSlots, {
   getExpiryDateFromPackage,
   getPackageById,
 } from './adSlots'
-import './legacyBindings'
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <div class="app-shell">
@@ -105,7 +104,7 @@ document.getElementById('claim')?.addEventListener('click', async () => {
 
 document.getElementById('buy')?.addEventListener('click', async () => {
   try {
-    const tx = await tickets.buyTickets('addr_test1_saleplaceholder', 2000000)
+    const tx = await tickets.buyTickets(1)
     status('Purchase submitted: ' + tx)
     const bal = await ui.refreshBalance().catch(() => '—')
     ui.updateWalletUI(true, await wallet.getAddress().catch(() => ''), bal)

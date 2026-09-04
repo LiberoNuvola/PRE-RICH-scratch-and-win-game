@@ -40,6 +40,7 @@ import Types
   , BeaconStatus (..)
   , BeaconTarget (..)
   , BeaconRegistryDatum (..)
+  , B1PrizePoolDatum (..)
   )
 
 -- ============================================================
@@ -199,6 +200,55 @@ resultBinding :: BuiltinByteString -> BuiltinByteString -> BuiltinByteString
 resultBinding digest syms =
   sha2_256 (appendByteString (field digest) (field syms))
 
+-- ============================================================
+-- B1PrizePool cross-validation
+-- ============================================================
+
+{-# INLINABLE decodeB1PrizePoolDatum #-}
+decodeB1PrizePoolDatum :: TxInfo -> TxOut -> Maybe B1PrizePoolDatum
+decodeB1PrizePoolDatum info out =
+  case txOutDatum out of
+    OutputDatum d ->
+      fromBuiltinData (getDatum d)
+    OutputDatumHash dh ->
+      case findDatum dh info of
+        Just d ->
+          fromBuiltinData (getDatum d)
+        Nothing ->
+          Nothing
+    NoOutputDatum ->
+      Nothing
+
+{-# INLINABLE findB1PrizePoolOutput #-}
+findB1PrizePoolOutput :: TxInfo -> BuiltinByteString -> Maybe B1PrizePoolDatum
+findB1PrizePoolOutput info poolHashB = go (txInfoOutputs info)
+  where
+    poolHash = ScriptHash poolHashB
+    go [] = Nothing
+    go (o:os) =
+      case addressCredential (txOutAddress o) of
+        ScriptCredential h
+          | h == poolHash ->
+              case decodeB1PrizePoolDatum info o of
+                Just d  -> Just d
+                Nothing -> go os
+        _ -> go os
+
+{-# INLINABLE readPoolInput #-}
+readPoolInput :: TxInfo -> BuiltinByteString -> B1PrizePoolDatum
+readPoolInput info poolHashB = go (txInfoInputs info)
+  where
+    poolHash = ScriptHash poolHashB
+    go [] = traceError "Prize: B1PrizePool input missing"
+    go (i:is) =
+      case addressCredential (txOutAddress (txInInfoResolved i)) of
+        ScriptCredential h
+          | h == poolHash ->
+              case decodeB1PrizePoolDatum info (txInInfoResolved i) of
+                Just d  -> d
+                Nothing -> go is
+        _ -> go is
+
 -- | Claim allowed only if tx validity range ends at or before expiresAt.
 -- Uses POSIX time from txInfoValidRange (ms-compatible Integer compare).
 {-# INLINABLE claimBeforeExpiry #-}
@@ -223,6 +273,7 @@ identityFieldsEq a b =
   && pdPaymentPolicy a == pdPaymentPolicy b
   && pdPaymentName a == pdPaymentName b
   && sameTarget (pdBeaconTarget a) (pdBeaconTarget b)
+  && pdPrizePoolHash a == pdPrizePoolHash b
   && pdIssuedAt a == pdIssuedAt b
   && pdExpiresAt a == pdExpiresAt b
 
@@ -318,12 +369,14 @@ validateSyncBeacon regHash datum ctx =
 {-# INLINABLE validateReveal #-}
 validateReveal
   :: PrizeTable
+  -> BuiltinByteString
   -> PrizeDatum
   -> BuiltinByteString
   -> ScriptContext
   -> Bool
-validateReveal table datum playerSecret ctx =
+validateReveal table prizePoolHash datum playerSecret ctx =
   let
+    info = scriptContextTxInfo ctx
     target = pdBeaconTarget datum
     roundId = btRound target
     ticketId = pdTicketName datum
@@ -380,6 +433,32 @@ validateReveal table datum playerSecret ctx =
           && pdResult n == expectedResult
           && pdPrizeTier n == tier
           && pdPrizeAmount n == amountUsdm
+
+    -- B1PrizePool cross-validation: pool accounting must be consistent
+    -- with the crystallised payout in the PrizeDatum output.
+    -- This ensures PrizeValidator and B1PrizePool update atomically.
+    -- The exact reserveRelease is B1PrizePool's domain (redeemer-supplied);
+    -- PrizeValidator verifies the fundamental accounting invariants.
+    poolOk =
+      case findB1PrizePoolOutput info prizePoolHash of
+        Nothing ->
+          traceIfFalse "Prize: B1PrizePool output missing" False
+        Just poolOut ->
+          let
+            poolIn  = readPoolInput info prizePoolHash
+            -- Reveal: payout moves from unresolvedReserve to pendingLiabilities.
+            -- totalLiquidity unchanged; pool value unchanged.
+            newReserve = ppUnresolvedReserve poolOut
+            oldReserve = ppUnresolvedReserve poolIn
+          in
+               traceIfFalse "Prize: pool liabilities wrong"
+                 (ppPendingLiabilities poolOut == ppPendingLiabilities poolIn + amountUsdm)
+            && traceIfFalse "Prize: pool reserve must decrease"
+                 (newReserve < oldReserve)
+            && traceIfFalse "Prize: pool liquidity unchanged"
+                 (ppTotalLiquidity poolOut == ppTotalLiquidity poolIn)
+            && traceIfFalse "Prize: pool count wrong"
+                 (ppUnresolvedTicketCount poolOut == ppUnresolvedTicketCount poolIn - 1)
   in
        traceIfFalse "Prize: already revealed" (pdStatus datum == Pending)
     && traceIfFalse "Prize: beacon not ready" (pdBeaconStatus datum == BeaconReady)
@@ -391,6 +470,7 @@ validateReveal table datum playerSecret ctx =
     && traceIfFalse "Prize: multi input" (countOwnScriptInputs ctx == 1)
     && traceIfFalse "Prize: value not preserved (reveal)" (valuePreserved ctx)
     && traceIfFalse "Prize: bad reveal continuing" nextOk
+    && traceIfFalse "Prize: pool accounting wrong" poolOk
 
 -- ============================================================
 -- Claim
@@ -399,10 +479,11 @@ validateReveal table datum playerSecret ctx =
 
 {-# INLINABLE validateClaim #-}
 validateClaim
-  :: PrizeDatum
+  :: BuiltinByteString
+  -> PrizeDatum
   -> ScriptContext
   -> Bool
-validateClaim datum ctx =
+validateClaim prizePoolHash datum ctx =
   let
     info = scriptContextTxInfo ctx
     ticketCs = CurrencySymbol (pdTicketPolicy datum)
@@ -461,16 +542,38 @@ validateClaim datum ctx =
           && pdResult n == pdResult datum
           && pdPrizeTier n == pdPrizeTier datum
           && pdPrizeAmount n == pdPrizeAmount datum
+
+    -- B1PrizePool cross-validation: pool accounting must be consistent
+    -- with the claimed payout. Claim reduces both totalLiquidity and
+    -- pendingLiabilities by the exact crystallised payout.
+    payout = pdPrizeAmount datum
+    poolOk =
+      case findB1PrizePoolOutput info prizePoolHash of
+        Nothing ->
+          traceIfFalse "Prize: B1PrizePool output missing" False
+        Just poolOut ->
+          let
+            poolIn = readPoolInput info prizePoolHash
+          in
+               traceIfFalse "Prize: pool liquidity wrong"
+                 (ppTotalLiquidity poolOut == ppTotalLiquidity poolIn - payout)
+            && traceIfFalse "Prize: pool liabilities wrong"
+                 (ppPendingLiabilities poolOut == ppPendingLiabilities poolIn - payout)
+            && traceIfFalse "Prize: pool reserve unchanged"
+                 (ppUnresolvedReserve poolOut == ppUnresolvedReserve poolIn)
+            && traceIfFalse "Prize: pool count unchanged"
+                 (ppUnresolvedTicketCount poolOut == ppUnresolvedTicketCount poolIn)
   in
        traceIfFalse "Prize: owner sig" ownerSigned
     && traceIfFalse "Prize: not revealed" (pdStatus datum == Revealed)
-    && traceIfFalse "Prize: already claimed" True
+    && traceIfFalse "Prize: already claimed" (pdStatus datum /= Claimed)
     && traceIfFalse "Prize: multi input" (countOwnScriptInputs ctx == 1)
     && traceIfFalse "Prize: zero prize" (pdPrizeAmount datum > 0)
     && traceIfFalse "Prize: claim window closed" (claimBeforeExpiry (pdExpiresAt datum) info)
     && traceIfFalse "Prize: payout" paid
     && traceIfFalse "Prize: value not preserved (claim)" (valuePreserved ctx)
     && traceIfFalse "Prize: bad claim continuing" nextOk
+    && traceIfFalse "Prize: pool accounting wrong" poolOk
     -- NFT burn is NOT required (constitution: keep after claim).
 
 -- ============================================================
@@ -480,32 +583,36 @@ validateClaim datum ctx =
 {-# INLINABLE mkValidator #-}
 mkValidator
   :: ScriptHash
+  -> ScriptHash
   -> PrizeTable
   -> PrizeDatum
   -> PrizeAction
   -> ScriptContext
   -> Bool
-mkValidator regHash table datum action ctx =
-  case action of
+mkValidator regHash prizePoolHash table datum action ctx =
+  let prizePoolBs = case prizePoolHash of ScriptHash bs -> bs
+  in case action of
     SyncBeacon ->
       validateSyncBeacon regHash datum ctx
     Reveal playerSecret ->
-      validateReveal table datum playerSecret ctx
+      validateReveal table prizePoolBs datum playerSecret ctx
     Claim ->
-      validateClaim datum ctx
+      validateClaim prizePoolBs datum ctx
 
 {-# INLINABLE wrap #-}
 wrap
   :: ScriptHash
+  -> ScriptHash
   -> PrizeTable
   -> BuiltinData
   -> BuiltinData
   -> BuiltinData
   -> BuiltinUnit
-wrap regHash table d r ctx =
+wrap regHash prizePoolHash table d r ctx =
   check
     (mkValidator
       regHash
+      prizePoolHash
       table
       (unsafeFromBuiltinData d)
       (unsafeFromBuiltinData r)
@@ -514,6 +621,7 @@ wrap regHash table d r ctx =
 compiledValidatorFactory
   :: CompiledCode
        ( ScriptHash
+         -> ScriptHash
          -> PrizeTable
          -> BuiltinData
          -> BuiltinData

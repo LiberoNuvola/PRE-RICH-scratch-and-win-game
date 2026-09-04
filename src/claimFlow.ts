@@ -1,5 +1,5 @@
 // src/claimFlow.ts
-import { prizeValidator, mintPolicyScript } from './loadValidator'
+import { prizeValidator } from './loadValidator'
 
 /**
  * Trova il prize UTxO il cui datum referenzia esattamente questo ticket.
@@ -114,15 +114,14 @@ export async function claimPrizeAuto(
     payValue = { lovelace: 1_000_000n }
   }
 
-  const burnAssetId = ticketPolicyId + ticketAssetName
-
+  // Constitution §35: NFT is NOT burned on claim. The ticket NFT remains
+  // in the claimant's wallet as proof of participation. We only spend
+  // the ticket UTxO to prove ownership; the NFT returns to the claimant.
   const tx = await lucid
     .newTx()
     .collectFrom([prizeUtxo], lucid.Data.void())
     .attachSpendingValidator(prizeValidator)
     .collectFrom([ticketUtxo])
-    .mintAssets({ [burnAssetId]: -1n }, lucid.Data.void())
-    .attachMintingPolicy(mintPolicyScript)
     .payToAddress(claimantAddr, payValue)
     .addSigner(claimantAddr)
     .complete()

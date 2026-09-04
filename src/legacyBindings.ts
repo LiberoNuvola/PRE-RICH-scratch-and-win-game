@@ -81,9 +81,7 @@ export async function bindLegacySidebar() {
 
   buyBtn?.addEventListener('click', async () => {
     try {
-      // sale address should be configured; fallback to prompt for now
-      const saleAddr = window.prompt('Sale address (addr_test...):', '') || 'addr_test1_saleplaceholder'
-      const tx = await tickets.buyTickets(saleAddr, 2000000)
+      const tx = await tickets.buyTickets(1)
       alert('Purchase submitted: ' + tx)
       await refreshAndShow(await wallet.getAddress().catch(()=>undefined))
     } catch (e:any) {

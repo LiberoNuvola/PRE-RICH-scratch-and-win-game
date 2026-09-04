@@ -15,9 +15,9 @@ import           PlutusLedgerApi.Common (serialiseCompiledCode)
 import           PlutusTx.Code          (CompiledCode)
 
 import qualified BeaconRegistry
+import qualified B1PrizePool
 import qualified CounterValidator
 import qualified MintPolicy
-import qualified PrizePool
 import qualified PrizeValidator
 import qualified Treasury
 
@@ -50,22 +50,17 @@ main = do
     (compiledCborHex Treasury.compiledValidator)
 
   -- Factory:
-  -- ScriptHash (BeaconRegistry) -> PrizeTable -> script.
-  -- Apply both parameters OFF-CHAIN after the registry is known.
+  -- ScriptHash (BeaconRegistry) -> ScriptHash (B1PrizePool) -> PrizeTable -> script.
+  -- Apply all three parameters OFF-CHAIN after the registry and pool are known.
   writeScriptJson
     "out/prizeValidatorFactory.plutus.json"
-    "PreRich Prize validator factory (apply BeaconRegistry ScriptHash, then PrizeTable off-chain)"
+    "PreRich Prize validator factory (apply BeaconRegistry ScriptHash, B1PrizePool ScriptHash, PrizeTable off-chain)"
     (compiledCborHex PrizeValidator.compiledValidatorFactory)
 
   writeScriptJson
     "out/counterValidator.plutus.json"
     "PreRich Counter validator"
     (compiledCborHex CounterValidator.compiledValidator)
-
-  writeScriptJson
-    "out/prizePool.plutus.json"
-    "PreRich PrizePool validator (legacy migration)"
-    (compiledCborHex PrizePool.compiledValidator)
 
   -- Factory:
   -- CounterValidator Hash
@@ -78,12 +73,17 @@ main = do
   -- All five parameters are applied OFF-CHAIN.
   writeScriptJson
     "out/mintPolicyFactory.plutus.json"
-    "PreRich Mint policy factory (apply CounterHash, PrizeValidatorHash, BeaconRegistryHash, PubKeyHash, Integer off-chain)"
+    "PreRich Mint policy factory (apply CounterHash, PrizeValidatorHash, BeaconRegistryHash off-chain)"
     (compiledCborHex MintPolicy.compiledPolicyFactory)
 
   writeScriptJson
     "out/beaconRegistry.plutus.json"
     "PreRich BeaconRegistry validator (light bridge, one UTxO per round)"
     (compiledCborHex BeaconRegistry.compiledValidator)
+
+  writeScriptJson
+    "out/b1PrizePoolFactory.plutus.json"
+    "PreRich B1 PrizePool factory (apply PrizeValidatorScriptHash off-chain)"
+    (compiledCborHex B1PrizePool.compiledValidatorFactory)
 
   putStrLn "Done. JSON scripts in plutus/out/"

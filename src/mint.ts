@@ -1,8 +1,10 @@
 /**
  * Mint seriale + Prize UTxO Pending in una sola tx.
  *
- * PrizeDatum include pdIssuedAt / pdExpiresAt (POSIX ms, ≥ 365 giorni).
- * Data.to() una sola volta sull'albero Constr (no double-encode).
+ * B1 architecture: buyer pays Treasury in a SEPARATE transaction.
+ * This transaction only mints the NFT and creates the PrizeDatum.
+ *
+ * PrizeDatum include pdIssuedAt / pdExpiresAt (POSIX ms, >= 365 days).
  */
 
 import { Constr, Data, type Script, type UTxO } from 'lucid-cardano'
@@ -14,11 +16,7 @@ import {
   counterValidator,
 } from './loadValidator'
 
-import {
-  SALE_ADDRESS,
-  TICKET_PRICE_LOVELACE,
-  RELAYER_PKH,
-} from './config'
+import { RELAYER_PKH } from './config'
 
 import {
   type BeaconTarget,
@@ -42,7 +40,7 @@ const MS_PER_DAY = 86_400_000n
 const DEFAULT_NETWORK_ID = 0
 const DEFAULT_ROUND_ID = 0
 const DEFAULT_GAME_VERSION = 'V1'
-const DEFAULT_PRICE_USDM = 2
+const DEFAULT_PRICE_USDM = 100 // 1 USDM = 100 sub-units
 
 function constr(index: number, fields: Data[] = []): Constr<Data> {
   return new Constr(index, fields)
@@ -64,8 +62,8 @@ function beaconTargetToConstr(target: BeaconTarget): Constr<Data> {
 }
 
 /**
- * PrizeDatum fields 0..19 (Types.hs):
- * 18 pdIssuedAt, 19 pdExpiresAt
+ * PrizeDatum fields 0..20 (Types.hs):
+ * 18 pdPrizePoolHash, 19 pdIssuedAt, 20 pdExpiresAt
  */
 function buildPrizeDatumConstr(fields: {
   ticketPolicyHex: string
@@ -79,6 +77,7 @@ function buildPrizeDatumConstr(fields: {
   paymentPolicyHex: string
   paymentNameHex: string
   target: BeaconTarget
+  prizePoolHashHex: string
   issuedAt: bigint
   expiresAt: bigint
 }): Constr<Data> {
@@ -101,6 +100,7 @@ function buildPrizeDatumConstr(fields: {
     '',
     '',
     '',
+    fields.prizePoolHashHex, // pdPrizePoolHash
     fields.issuedAt,
     fields.expiresAt,
   ])
@@ -162,11 +162,11 @@ function pickPendingRegistryUtxo(utxos: UTxO[], roundId: number): UTxO {
   if (matching.length === 1) return matching[0]
   if (matching.length > 1) {
     throw new Error(
-      `Più BeaconRegistry Pending per round=${roundId}. Atteso uno solo.`,
+      `Multiple BeaconRegistry Pending for round=${roundId}. Expected one.`,
     )
   }
   throw new Error(
-    `Nessun BeaconRegistry Pending per round=${roundId}. Pubblica il registry prima del mint.`,
+    `No BeaconRegistry Pending for round=${roundId}. Publish registry before mint.`,
   )
 }
 
@@ -187,8 +187,6 @@ export type MintSerialResult = {
 }
 
 export type MintSerialOptions = {
-  saleAddress?: string
-  priceLovelace?: number
   priceUsdm?: number
   networkId?: number
   roundId?: number
@@ -207,10 +205,6 @@ export async function mintSerialNFT(
   const lucid = wallet.getLucid()
   if (!lucid) throw new Error('Wallet not connected')
 
-  const saleAddress = opts.saleAddress ?? SALE_ADDRESS
-  if (!saleAddress) throw new Error('SALE_ADDRESS mancante')
-
-  const priceLovelace = opts.priceLovelace ?? TICKET_PRICE_LOVELACE
   const priceUsdm = opts.priceUsdm ?? DEFAULT_PRICE_USDM
   const networkId = opts.networkId ?? DEFAULT_NETWORK_ID
   const roundId = opts.roundId ?? DEFAULT_ROUND_ID
@@ -221,12 +215,7 @@ export async function mintSerialNFT(
   const prizeFunding = opts.prizeFundingLovelace ?? MIN_ADA_PRIZE
   const prizeAmount = opts.prizeAmount ?? prizeFunding
 
-  const scripts = buildScriptsFromLucid(
-    lucid,
-    saleAddress,
-    priceLovelace,
-    table,
-  )
+  const scripts = buildScriptsFromLucid(lucid, table)
 
   const {
     mintPolicy,
@@ -235,21 +224,22 @@ export async function mintSerialNFT(
     counterAddress,
     registryAddress,
     prizeAddress,
+    b1PrizePoolHash,
   } = scripts
 
   void prizeValidator
 
   if (!counterAddress || !registryAddress || !prizeAddress) {
-    throw new Error('Impossibile derivare gli script address da Lucid')
+    throw new Error('Cannot derive script addresses from Lucid')
   }
 
   const counterUtxos = await lucid.utxosAt(counterAddress)
   if (counterUtxos.length === 0) {
-    throw new Error(`Nessun Counter UTxO a ${counterAddress}`)
+    throw new Error(`No Counter UTxO at ${counterAddress}`)
   }
   if (counterUtxos.length !== 1) {
     throw new Error(
-      `Attesi esattamente 1 Counter UTxO, trovati ${counterUtxos.length}`,
+      `Expected exactly 1 Counter UTxO, found ${counterUtxos.length}`,
     )
   }
 
@@ -260,11 +250,11 @@ export async function mintSerialNFT(
       counterUtxo.datum ?? (await lucid.datumOf(counterUtxo))
     n = parseCounterDatum(rawDatum)
   } catch (error) {
-    console.error('Errore lettura Counter datum:', error)
+    console.error('Error reading Counter datum:', error)
   }
 
   if (n === null || !Number.isInteger(n) || n < 0) {
-    throw new Error('Counter datum non leggibile')
+    throw new Error('Counter datum unreadable')
   }
 
   const tokenNameAscii = String(n)
@@ -280,7 +270,7 @@ export async function mintSerialNFT(
 
   const registryUtxos = await lucid.utxosAt(registryAddress)
   if (registryUtxos.length === 0) {
-    throw new Error(`Nessun BeaconRegistry UTxO a ${registryAddress}`)
+    throw new Error(`No BeaconRegistry UTxO at ${registryAddress}`)
   }
 
   const registryUtxo = pickPendingRegistryUtxo(registryUtxos, roundId)
@@ -297,16 +287,16 @@ export async function mintSerialNFT(
       String(foundRelayerPkh).toLowerCase() !== RELAYER_PKH.toLowerCase()
     ) {
       throw new Error(
-        `BeaconRegistry round=${roundId}: relayerPkh inatteso (atteso ${RELAYER_PKH})`,
+        `BeaconRegistry round=${roundId}: unexpected relayerPkh (expected ${RELAYER_PKH})`,
       )
     }
   } else {
-    console.warn('RELAYER_PKH non configurato: round non verificato.')
+    console.warn('RELAYER_PKH not configured: round not verified.')
   }
 
   const playerSecret = opts.playerSecret ?? randomPlayerSecret(32)
   if (playerSecret.length !== 32) {
-    throw new Error('playerSecret deve essere 32 bytes')
+    throw new Error('playerSecret must be 32 bytes')
   }
 
   const pCommit = await playerCommitment(roundId, ticketNonce, playerSecret)
@@ -340,6 +330,7 @@ export async function mintSerialNFT(
     paymentPolicyHex: '',
     paymentNameHex: '',
     target,
+    prizePoolHashHex: b1PrizePoolHash,
     issuedAt: issuedAtMs,
     expiresAt: expiresAtMs,
   })
@@ -348,6 +339,9 @@ export async function mintSerialNFT(
   const mintAssets: Record<string, bigint> = { [unit]: 1n }
   const buyer = await lucid.wallet.address()
 
+  // B1: NO sale payment in this transaction.
+  // Buyer pays Treasury in a separate transaction (atomicity limitation).
+  // See Game-Economy.md §9, §10.
   const tx = await lucid
     .newTx()
     .collectFrom([counterUtxo], Data.void())
@@ -355,7 +349,6 @@ export async function mintSerialNFT(
     .mintAssets(mintAssets, Data.void())
     .attachMintingPolicy(mintPolicy as Script)
     .readFrom([registryUtxo])
-    .payToAddress(saleAddress, { lovelace: BigInt(priceLovelace) })
     .payToContract(
       counterAddress,
       { inline: Data.to(BigInt(n + 1)) },
