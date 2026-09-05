@@ -14,9 +14,10 @@ import wallet from './wallet'
 import {
   buildScriptsFromLucid,
   counterValidator,
+  treasuryValidator,
 } from './loadValidator'
 
-import { RELAYER_PKH } from './config'
+import { RELAYER_PKH, ORACLE_PUBLISHER_PKH, TREASURY_ADDRESS } from './config'
 
 import {
   type BeaconTarget,
@@ -215,7 +216,7 @@ export async function mintSerialNFT(
   const prizeFunding = opts.prizeFundingLovelace ?? MIN_ADA_PRIZE
   const prizeAmount = opts.prizeAmount ?? prizeFunding
 
-  const scripts = buildScriptsFromLucid(lucid, table)
+  const scripts = buildScriptsFromLucid(lucid, table, ORACLE_PUBLISHER_PKH)
 
   const {
     mintPolicy,
@@ -225,11 +226,13 @@ export async function mintSerialNFT(
     registryAddress,
     prizeAddress,
     b1PrizePoolHash,
+    b1PrizePoolAddress,
+    b1PrizePool,
   } = scripts
 
   void prizeValidator
 
-  if (!counterAddress || !registryAddress || !prizeAddress) {
+  if (!counterAddress || !registryAddress || !prizeAddress || !b1PrizePoolAddress) {
     throw new Error('Cannot derive script addresses from Lucid')
   }
 
@@ -256,6 +259,36 @@ export async function mintSerialNFT(
   if (n === null || !Number.isInteger(n) || n < 0) {
     throw new Error('Counter datum unreadable')
   }
+
+  const poolUtxos = await lucid.utxosAt(b1PrizePoolAddress)
+  if (poolUtxos.length !== 1) {
+    throw new Error(
+      `Expected exactly 1 B1PrizePool UTxO, found ${poolUtxos.length}`,
+    )
+  }
+  const poolUtxo = poolUtxos[0]
+  const rawPoolDatum = poolUtxo.datum
+  if (!rawPoolDatum) throw new Error('B1PrizePool datum missing')
+  const poolDatum = typeof rawPoolDatum === 'string'
+    ? Data.from(rawPoolDatum)
+    : rawPoolDatum as Data
+  if (!poolDatum || typeof poolDatum !== 'object' || !('fields' in poolDatum)) {
+    throw new Error('B1PrizePool datum not decodable')
+  }
+  const poolFields = (poolDatum as any).fields as any[]
+  if (!Array.isArray(poolFields) || poolFields.length !== 8) {
+    throw new Error('B1PrizePool datum must contain 8 fields')
+  }
+  const poolInt = (index: number): bigint => {
+    const value = poolFields[index]
+    if (typeof value === 'bigint') return value
+    if (value && typeof value === 'object' && 'int' in value) return BigInt(value.int)
+    throw new Error(`B1PrizePool field ${index} is not an integer`)
+  }
+  const nextPoolFields = [...poolFields]
+  nextPoolFields[2] = poolInt(2) + BigInt(priceUsdm)
+  nextPoolFields[3] = poolInt(3) + 1n
+  const nextPoolDatum = new Constr(0, nextPoolFields as Data[])
 
   const tokenNameAscii = String(n)
   const tokenNameHex = strToHex(tokenNameAscii)
@@ -339,15 +372,30 @@ export async function mintSerialNFT(
   const mintAssets: Record<string, bigint> = { [unit]: 1n }
   const buyer = await lucid.wallet.address()
 
-  // B1: NO sale payment in this transaction.
-  // Buyer pays Treasury in a separate transaction (atomicity limitation).
-  // See Game-Economy.md §9, §10.
+  const treasuryAddress = TREASURY_ADDRESS || lucid.utils.validatorToAddress(treasuryValidator)
+  if (!treasuryAddress) throw new Error('Treasury address not configured')
+  const treasuryUtxos = await lucid.utxosAt(treasuryAddress)
+  const treasuryDatumRaw = treasuryUtxos.find((u: UTxO) => !!u.datum)?.datum
+  if (!treasuryDatumRaw) {
+    throw new Error('Treasury UTxO with datum not found; cannot create a spendable Treasury deposit')
+  }
+  const treasuryDatum = typeof treasuryDatumRaw === 'string'
+    ? Data.from(treasuryDatumRaw)
+    : treasuryDatumRaw as Data
+
+  // C-02: sale payment + Ticket mint + PrizeDatum + PrizePool reservation
+  // are all committed in this single transaction.
   const tx = await lucid
     .newTx()
     .collectFrom([counterUtxo], Data.void())
     .attachSpendingValidator(counterValidator)
     .mintAssets(mintAssets, Data.void())
     .attachMintingPolicy(mintPolicy as Script)
+    .collectFrom(
+      [poolUtxo],
+      new Constr(1, [BigInt(priceUsdm)]),
+    )
+    .attachSpendingValidator(b1PrizePool as Script)
     .readFrom([registryUtxo])
     .payToContract(
       counterAddress,
@@ -358,6 +406,16 @@ export async function mintSerialNFT(
       prizeAddress,
       { inline: Data.to(prizeDatumConstr) },
       { lovelace: prizeFunding },
+    )
+    .payToContract(
+      b1PrizePoolAddress,
+      { inline: Data.to(nextPoolDatum) },
+      poolUtxo.assets,
+    )
+    .payToContract(
+      treasuryAddress,
+      { inline: Data.to(treasuryDatum) },
+      { lovelace: 1_000_000n },
     )
     .payToAddress(buyer, { [unit]: 1n })
     .addSigner(buyer)
