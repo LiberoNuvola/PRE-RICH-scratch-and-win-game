@@ -1127,6 +1127,55 @@ describe('PrizeValidator + B1PrizePool Cross-Validation', () => {
 })
 
 // ============================================================
+// 12. C-02: Atomic Ticket Sale
+//
+// These tests mirror the B1 atomic-sale invariant. They do not claim to
+// execute Plutus; on-chain enforcement belongs to MintPolicy + B1PrizePool.
+// ============================================================
+
+describe('C-02: Atomic Ticket Sale', () => {
+  it('Genesis economic price is 1 USDM = 100 sub-units', () => {
+    assert.equal(GENESIS_TICKET_PRICE_USDM, 100)
+  })
+
+  it('current Preprod settlement baseline is exactly 1 ADA', () => {
+    assert.equal(TICKET_PAYMENT_LOVELACE, 1_000_000)
+  })
+
+  it('TicketIssued reserves exactly pdPriceUsdm', () => {
+    const before = makeState({
+      ppUnresolvedTicketCount: 7,
+      ppUnresolvedReserve: 700,
+    })
+
+    const after = applyTicketIssued(before, GENESIS_TICKET_PRICE_USDM)
+
+    assert.equal(
+      after.ppUnresolvedTicketCount,
+      before.ppUnresolvedTicketCount + 1,
+    )
+    assert.equal(
+      after.ppUnresolvedReserve,
+      before.ppUnresolvedReserve + GENESIS_TICKET_PRICE_USDM,
+    )
+  })
+
+  it('an issued ticket must be economically reserved', () => {
+    const before = makeState({
+      ppTotalLiquidity: 10_000,
+      ppUnresolvedTicketCount: 0,
+      ppUnresolvedReserve: 0,
+    })
+
+    const after = applyTicketIssued(before, GENESIS_TICKET_PRICE_USDM)
+
+    assert.equal(after.ppUnresolvedTicketCount, 1)
+    assert.equal(after.ppUnresolvedReserve, GENESIS_TICKET_PRICE_USDM)
+    assert.ok(solvencyOk(after))
+  })
+})
+
+// ============================================================
 // 12. C-03: Multi-Asset Accounting & Oracle Valuation (MIRROR TESTS)
 //
 // These tests verify the TypeScript mirror of the Plutus C-03
@@ -1293,14 +1342,12 @@ describe('C-03: Recomputed Liquidity (TypeScript Mirror)', () => {
     return adaUsdm + usdmUsdm
   }
 
-  it('USDM-only pool: 1000 USDM sub-units', () => {
-    const liq = recomputedLiquidity(2_000_000, 1000, 80) // 2 ADA + 1000 USDM
-    assert.equal(liq, 1000) // ADA economic value = max(0, 2M - 1.6M) * 80 / 1M = 32
-    // Wait, let me recalculate:
-    // economicAda = max(0, 2_000_000 - 1_600_000) = 400_000
-    // adaUsdm = floor((400_000 * 80 + 999_999) / 1_000_000) = floor(32_999_999 / 1_000_000) = 32
-    // usdmUsdm = 1000
-    // total = 1032
+  it('USDM + ADA pool: economic ADA is included in liquidity', () => {
+    const liq = recomputedLiquidity(2_000_000, 1000, 80)
+
+    // 2 ADA - 1.6 ADA MIN-UTxO = 0.4 ADA economic
+    // 0.4 ADA * 0.80 USDM/ADA = 32 USDM sub-units
+    // 1000 USDM + 32 USDM = 1032 sub-units
     assert.equal(liq, 1032)
   })
 
@@ -1352,13 +1399,21 @@ describe('C-03: FundTreasury Oracle Verification', () => {
   }
 
   it('FundTreasury: liquidity increase via ADA deposit', () => {
-    const oldLiquidity = 1000
-    // Deposit 3 ADA (3_000_000 lovelace)
-    const newAda = 5_000_000 // total after deposit
+    // Before: 2 ADA + 500 USDM at 0.80 USDM/ADA.
+    // Economic ADA = 0.4 ADA = 32 USDM sub-units.
+    // Old liquidity = 32 + 500 = 532.
+    const oldLiquidity = 532
+
+    // Deposit 3 ADA -> total 5 ADA, same 500 USDM.
+    const newAda = 5_000_000
     const newUsdm = 500
     const newLiquidity = recomputedLiquidity(newAda, newUsdm, 80)
-    assert.ok(newLiquidity > oldLiquidity,
-      `new ${newLiquidity} > old ${oldLiquidity}`)
+
+    // New liquidity = 272 + 500 = 772.
+    assert.ok(
+      newLiquidity > oldLiquidity,
+      `new ${newLiquidity} > old ${oldLiquidity}`,
+    )
   })
 
   it('FundTreasury: liquidity increase via USDM deposit', () => {

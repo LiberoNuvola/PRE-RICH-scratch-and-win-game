@@ -3,81 +3,80 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE ViewPatterns        #-}
 
 module MintPolicy
   ( mkPolicy
   , compiledPolicyFactory
   ) where
 
-import           PlutusLedgerApi.V2
-import           PlutusLedgerApi.V2.Contexts
-import           PlutusTx
-import           PlutusTx.Prelude            hiding (Semigroup (..), unless)
+import PlutusLedgerApi.V2
+import PlutusLedgerApi.V2.Contexts
+import PlutusTx
+import PlutusTx.Prelude hiding (Semigroup (..), unless)
 
-import           Beacon
+import qualified PlutusTx.AssocMap as AssocMap
+
+import Beacon
   ( encodeBeaconTarget
   , sameTarget
   , ticketCommitment
   )
 
-import           Types
+import Types
   ( BeaconRegistryDatum (..)
   , BeaconStatus (..)
+  , B1PrizePoolDatum (..)
   , BeaconTarget (..)
   , PrizeDatum (..)
   , PrizeStatus (..)
   )
 
+-- ============================================================
+-- Generic helpers
+-- ============================================================
+
 {-# INLINABLE integerToBuiltinByteString #-}
 integerToBuiltinByteString :: Integer -> BuiltinByteString
-integerToBuiltinByteString n
-  | n < 0     = integerToBuiltinByteString 0
-  | n == 0    = consByteString 48 emptyByteString
-  | otherwise = go n emptyByteString
-  where
-    go x acc
-      | x == 0    = acc
-      | otherwise =
-          let q     = divide x 10
-              r     = remainder x 10
-              digit = consByteString (48 + r) emptyByteString
-          in go q (appendByteString digit acc)
+integerToBuiltinByteString n =
+  consByteString n emptyByteString
 
 {-# INLINABLE tokenNameFromInteger #-}
 tokenNameFromInteger :: Integer -> TokenName
-tokenNameFromInteger i =
-  TokenName (integerToBuiltinByteString i)
+tokenNameFromInteger n =
+  TokenName (integerToBuiltinByteString n)
 
 {-# INLINABLE valueLovelace #-}
 valueLovelace :: Value -> Integer
 valueLovelace v =
   valueOf v adaSymbol adaToken
 
+{-# INLINABLE listLength #-}
+listLength :: [a] -> Integer
+listLength [] = 0
+listLength (_:xs) =
+  1 + listLength xs
+
+-- ============================================================
+-- Counter helpers
+-- ============================================================
+
 {-# INLINABLE readIntegerDatum #-}
 readIntegerDatum :: TxInfo -> TxOut -> Maybe Integer
 readIntegerDatum info out =
   case txOutDatum out of
     OutputDatum d ->
-      case fromBuiltinData (getDatum d) of
-        Just (n :: Integer) -> Just n
-        Nothing             -> Nothing
+      fromBuiltinData (getDatum d)
 
     OutputDatumHash dh ->
       case findDatum dh info of
         Just d ->
-          case fromBuiltinData (getDatum d) of
-            Just (n :: Integer) -> Just n
-            Nothing             -> Nothing
+          fromBuiltinData (getDatum d)
         Nothing ->
           Nothing
 
     NoOutputDatum ->
       Nothing
-
-{-# INLINABLE listLength #-}
-listLength :: [a] -> Integer
-listLength []     = 0
-listLength (_:xs) = 1 + listLength xs
 
 {-# INLINABLE findCounterInputs #-}
 findCounterInputs :: ScriptHash -> [TxInInfo] -> [TxInInfo]
@@ -91,49 +90,43 @@ findCounterInputs sh (txIn:rest) =
       findCounterInputs sh rest
 
 {-# INLINABLE hasNextCounterOutput #-}
-hasNextCounterOutput :: ScriptHash -> Integer -> TxInfo -> Bool
-hasNextCounterOutput sh n info =
-  listLength (go (txInfoOutputs info)) == 1
+hasNextCounterOutput
+  :: ScriptHash
+  -> Integer
+  -> TxInfo
+  -> Bool
+hasNextCounterOutput counterHash n info =
+  go (txInfoOutputs info)
   where
-    go [] = []
-    go (out:rest) =
-      case addressCredential (txOutAddress out) of
+    go [] =
+      False
+
+    go (o:os) =
+      case addressCredential (txOutAddress o) of
         ScriptCredential h
-          | h == sh ->
-              case readIntegerDatum info out of
-                Just m
-                  | m == n + 1 ->
-                      out : go rest
-                _ ->
-                  go rest
+          | h == counterHash ->
+              case readIntegerDatum info o of
+                Just nextN ->
+                  nextN == n + 1
+                Nothing ->
+                  False
+
         _ ->
-          go rest
+          go os
+
+-- ============================================================
+-- Mint helpers
+-- ============================================================
 
 {-# INLINABLE ownMintEntries #-}
-ownMintEntries
-  :: CurrencySymbol
-  -> Value
-  -> [(CurrencySymbol, TokenName, Integer)]
-ownMintEntries ownCs minted =
-  go (flattenValue minted)
-  where
-    go [] = []
-    go (e@(cs, _, _):rest) =
-      if cs == ownCs
-        then e : go rest
-        else go rest
+ownMintEntries :: CurrencySymbol -> Value -> [(TokenName, Integer)]
+ownMintEntries cs v =
+  case AssocMap.lookup cs (getValue v) of
+    Nothing ->
+      []
 
--- A valid burn under this policy must burn exactly one token belonging
--- to this currency symbol, in quantity -1.
-
-{-# INLINABLE isExactSingleBurn #-}
-isExactSingleBurn :: CurrencySymbol -> Value -> Bool
-isExactSingleBurn ownCs minted =
-  case ownMintEntries ownCs minted of
-    [(cs, _, amt)] ->
-      cs == ownCs && amt == negate 1
-    _ ->
-      False
+    Just tokens ->
+      AssocMap.toList tokens
 
 {-# INLINABLE mintedExactlyOneSerial #-}
 mintedExactlyOneSerial
@@ -143,19 +136,35 @@ mintedExactlyOneSerial
   -> Bool
 mintedExactlyOneSerial ownCs expectedName minted =
   case ownMintEntries ownCs minted of
-    [(cs, tn, amt)] ->
-      cs == ownCs
-        && tn == expectedName
-        && amt == 1
+    [(name, amount)] ->
+         name == expectedName
+      && amount == 1
+
+    _ ->
+      False
+
+{-# INLINABLE isExactSingleBurn #-}
+isExactSingleBurn
+  :: CurrencySymbol
+  -> Value
+  -> Bool
+isExactSingleBurn ownCs minted =
+  case ownMintEntries ownCs minted of
+    [(_, amount)] ->
+      amount == (-1)
+
     _ ->
       False
 
 -- ============================================================
--- Prize UTxO / BeaconRegistry checks
+-- PrizeDatum decoding
 -- ============================================================
 
 {-# INLINABLE decodePrizeDatum #-}
-decodePrizeDatum :: TxInfo -> TxOut -> Maybe PrizeDatum
+decodePrizeDatum
+  :: TxInfo
+  -> TxOut
+  -> Maybe PrizeDatum
 decodePrizeDatum info out =
   case txOutDatum out of
     OutputDatum d ->
@@ -163,15 +172,14 @@ decodePrizeDatum info out =
 
     OutputDatumHash dh ->
       case findDatum dh info of
-        Just d  -> fromBuiltinData (getDatum d)
-        Nothing -> Nothing
+        Just d ->
+          fromBuiltinData (getDatum d)
+
+        Nothing ->
+          Nothing
 
     NoOutputDatum ->
       Nothing
-
--- Requires exactly one output to PrizeValidator with a decodable
--- PrizeDatum. This removes ambiguity about which Prize UTxO belongs
--- to the ticket mint.
 
 {-# INLINABLE findSinglePrizeOutput #-}
 findSinglePrizeOutput
@@ -181,26 +189,31 @@ findSinglePrizeOutput
 findSinglePrizeOutput prizeHash info =
   go (txInfoOutputs info) Nothing
   where
-    isPrizeOut o =
-      case addressCredential (txOutAddress o) of
-        ScriptCredential h ->
-          h == prizeHash
-        _ ->
-          False
-
     go [] found =
       found
 
     go (o:os) found =
-      if isPrizeOut o
-        then
-          case found of
-            Just _ ->
-              Nothing
-            Nothing ->
-              go os (decodePrizeDatum info o)
-        else
+      case addressCredential (txOutAddress o) of
+        ScriptCredential h
+          | h == prizeHash ->
+              case found of
+                Just _ ->
+                  Nothing
+
+                Nothing ->
+                  case decodePrizeDatum info o of
+                    Just pd ->
+                      go os (Just pd)
+
+                    Nothing ->
+                      Nothing
+
+        _ ->
           go os found
+
+-- ============================================================
+-- Beacon registry
+-- ============================================================
 
 {-# INLINABLE decodeRegistryDatum #-}
 decodeRegistryDatum
@@ -214,8 +227,11 @@ decodeRegistryDatum info out =
 
     OutputDatumHash dh ->
       case findDatum dh info of
-        Just d  -> fromBuiltinData (getDatum d)
-        Nothing -> Nothing
+        Just d ->
+          fromBuiltinData (getDatum d)
+
+        Nothing ->
+          Nothing
 
     NoOutputDatum ->
       Nothing
@@ -232,6 +248,7 @@ readRegistry regHash info =
       case addressCredential (txOutAddress (txInInfoResolved i)) of
         ScriptCredential h ->
           h == regHash
+
         _ ->
           False
 
@@ -241,12 +258,18 @@ readRegistry regHash info =
     go (i:is)
       | isRegistryRef i =
           decodeRegistryDatum info (txInInfoResolved i)
+
       | otherwise =
           go is
+
+-- ============================================================
+-- PrizeDatum creation validation
+-- ============================================================
 
 {-# INLINABLE newPrizeDatumValid #-}
 newPrizeDatumValid
   :: ScriptHash
+  -> ScriptHash
   -> ScriptHash
   -> CurrencySymbol
   -> TokenName
@@ -255,6 +278,7 @@ newPrizeDatumValid
 newPrizeDatumValid
   prizeHash
   regHash
+  b1PrizePoolHash
   ownCs
   expectedName
   ctx =
@@ -264,9 +288,11 @@ newPrizeDatumValid
       CurrencySymbol ownCsBytes =
         ownCs
 
+      ScriptHash b1PrizePoolHashBytes =
+        b1PrizePoolHash
+
       TokenName expectedNameBytes =
         expectedName
-
     in
       case findSinglePrizeOutput prizeHash info of
         Nothing ->
@@ -274,12 +300,14 @@ newPrizeDatumValid
 
         Just pd ->
           let
-            target =
-              pdBeaconTarget pd
+            target = pdBeaconTarget pd
 
             ticketBoundOk =
-                 pdTicketPolicy pd == ownCsBytes
-              && pdTicketName pd == expectedNameBytes
+              pdTicketPolicy pd == ownCsBytes
+                && pdTicketName pd == expectedNameBytes
+
+            poolBoundOk =
+              pdPrizePoolHash pd == b1PrizePoolHashBytes
 
             commitmentOk =
               pdCommitment pd
@@ -292,13 +320,12 @@ newPrizeDatumValid
                      (encodeBeaconTarget target)
 
             freshStateOk =
-                 pdStatus pd == Pending
-              && pdBeaconStatus pd == BeaconPending
-              && pdPrizeTier pd == 0
-              && lengthOfByteString (pdResult pd) == 0
-              && lengthOfByteString (pdBeaconValue pd) == 0
-              && lengthOfByteString (pdMcHash pd) == 0
-              && lengthOfByteString (pdMateriosContext pd) == 0
+              pdStatus pd == Pending
+                && pdBeaconStatus pd == BeaconPending
+                && pdPrizeTier pd == 0
+                && lengthOfByteString (pdResult pd) == 0
+                && lengthOfByteString (pdBeaconValue pd) == 0
+                && lengthOfByteString (pdMcHash pd) == 0
 
             roundNotYetRevealedOk =
               case readRegistry regHash info of
@@ -312,28 +339,225 @@ newPrizeDatumValid
 
           in
                ticketBoundOk
+            && poolBoundOk
             && commitmentOk
             && freshStateOk
             && roundNotYetRevealedOk
 
+-- ============================================================
+-- C-02 atomic sale checks
+-- ============================================================
+
+-- Current B1 launch settlement:
+--
+--   1 ADA = 1,000,000 lovelace
+--
+-- This is the settlement amount used by the current Preprod sale flow.
+-- It is deliberately NOT treated as the USDM economic price.
+--
+-- pdPriceUsdm remains the canonical economic ticket price.
+-- General ADA/USDM oracle valuation belongs to the later C-03
+-- multi-asset settlement work.
+{-# INLINABLE ticketPaymentLovelace #-}
+ticketPaymentLovelace :: Integer
+ticketPaymentLovelace =
+  1000000
+
+-- ============================================================
+-- Treasury payment
+-- ============================================================
+
+{-# INLINABLE singleScriptOutputLovelace #-}
+singleScriptOutputLovelace
+  :: ScriptHash
+  -> TxInfo
+  -> Maybe Integer
+singleScriptOutputLovelace sh info =
+  go (txInfoOutputs info) Nothing
+  where
+    go [] found =
+      found
+
+    go (o:os) found =
+      case addressCredential (txOutAddress o) of
+        ScriptCredential h
+          | h == sh ->
+              case found of
+                Just _ ->
+                  Nothing
+
+                Nothing ->
+                  go os (Just (valueLovelace (txOutValue o)))
+
+        _ ->
+          go os found
+
+{-# INLINABLE atomicTreasuryPaymentValid #-}
+atomicTreasuryPaymentValid
+  :: ScriptHash
+  -> TxInfo
+  -> Bool
+atomicTreasuryPaymentValid treasuryHash info =
+  case singleScriptOutputLovelace treasuryHash info of
+    Just amount ->
+      amount == ticketPaymentLovelace
+
+    Nothing ->
+      False
+
+-- ============================================================
+-- B1PrizePool atomic reservation
+-- ============================================================
+
+{-# INLINABLE decodePoolDatumAt #-}
+decodePoolDatumAt
+  :: TxInfo
+  -> ScriptHash
+  -> TxOut
+  -> Maybe B1PrizePoolDatum
+decodePoolDatumAt info sh out =
+  case addressCredential (txOutAddress out) of
+    ScriptCredential h
+      | h == sh ->
+          case txOutDatum out of
+            OutputDatum d ->
+              fromBuiltinData (getDatum d)
+
+            OutputDatumHash dh ->
+              case findDatum dh info of
+                Just d ->
+                  fromBuiltinData (getDatum d)
+
+                Nothing ->
+                  Nothing
+
+            NoOutputDatum ->
+              Nothing
+
+    _ ->
+      Nothing
+
+{-# INLINABLE findSinglePoolInput #-}
+findSinglePoolInput
+  :: ScriptHash
+  -> TxInfo
+  -> Maybe (B1PrizePoolDatum, Value)
+findSinglePoolInput sh info =
+  go (txInfoInputs info) Nothing
+  where
+    go [] found =
+      found
+
+    go (i:is) found =
+      case decodePoolDatumAt info sh (txInInfoResolved i) of
+        Nothing ->
+          go is found
+
+        Just pd ->
+          case found of
+            Nothing ->
+              go is
+                (Just
+                  ( pd
+                  , txOutValue (txInInfoResolved i)
+                  )
+                )
+
+            Just _ ->
+              Nothing
+
+{-# INLINABLE findSinglePoolOutput #-}
+findSinglePoolOutput
+  :: ScriptHash
+  -> TxInfo
+  -> Maybe (B1PrizePoolDatum, Value)
+findSinglePoolOutput sh info =
+  go (txInfoOutputs info) Nothing
+  where
+    go [] found =
+      found
+
+    go (o:os) found =
+      case decodePoolDatumAt info sh o of
+        Nothing ->
+          go os found
+
+        Just pd ->
+          case found of
+            Nothing ->
+              go os
+                (Just
+                  ( pd
+                  , txOutValue o
+                  )
+                )
+
+            Just _ ->
+              Nothing
+
+{-# INLINABLE atomicPoolReservationValid #-}
+atomicPoolReservationValid
+  :: ScriptHash
+  -> Integer
+  -> TxInfo
+  -> Bool
+atomicPoolReservationValid poolHash priceUsdm info =
+  case findSinglePoolInput poolHash info of
+    Nothing ->
+      False
+
+    Just (before, beforeValue) ->
+      case findSinglePoolOutput poolHash info of
+        Nothing ->
+          False
+
+        Just (after, afterValue) ->
+             beforeValue == afterValue
+          && ppTotalLiquidity after
+               == ppTotalLiquidity before
+          && ppPendingLiabilities after
+               == ppPendingLiabilities before
+          && ppUnresolvedReserve after
+               == ppUnresolvedReserve before + priceUsdm
+          && ppUnresolvedTicketCount after
+               == ppUnresolvedTicketCount before + 1
+          && ppLockedJackpot after
+               == ppLockedJackpot before
+          && ppJackpotThreshold after
+               == ppJackpotThreshold before
+          && ppSuspendedClasses after
+               == ppSuspendedClasses before
+          && ppPrizeHash after
+               == ppPrizeHash before
+
+-- ============================================================
+-- Main mint policy
+-- ============================================================
+
 -- | Mint policy for PRE-RICH serial NFT tickets.
 --
--- B1 architecture: buyer pays Treasury (protocol-controlled), not a personal
--- wallet. The MintPolicy does NOT validate the payment destination — that is
--- enforced by the Treasury validator. The MintPolicy only validates:
---   1. Exactly one serial NFT minted with correct name
---   2. Counter UTxO advanced n → n+1
---   3. PrizeDatum output is valid (fresh state, correct commitment)
---   4. BeaconRegistry round not yet revealed
+-- B1 atomic-sale requirement:
 --
--- Payment to Treasury is a separate transaction that must occur before or
--- atomically with the mint. See Game-Economy.md §9 and §10.
+-- The SAME transaction must contain:
 --
--- Constitutional requirement: no player payment may be routed through a
--- team-controlled personal wallet (Game-Economy.md §9).
+--   1. counter n -> n+1
+--   2. exactly one Ticket NFT mint
+--   3. creation of the Pending PrizeDatum
+--   4. payment to the protocol Treasury
+--   5. B1PrizePool TicketIssued reservation
+--
+-- The policy verifies the transaction structure itself.
+-- Therefore the frontend cannot be the security boundary.
+--
+-- Burn:
+--
+-- A single exact burn of one ticket NFT remains permitted.
+-- Burn handling is intentionally separate from the sale path.
 {-# INLINABLE mkPolicy #-}
 mkPolicy
   :: ScriptHash
+  -> ScriptHash
+  -> ScriptHash
   -> ScriptHash
   -> ScriptHash
   -> ()
@@ -343,6 +567,8 @@ mkPolicy
   counterHash
   prizeHash
   regHash
+  treasuryHash
+  b1PrizePoolHash
   _
   ctx
   | isExactSingleBurn ownCs minted =
@@ -350,10 +576,13 @@ mkPolicy
 
   | otherwise =
       case findCounterInputs counterHash (txInfoInputs info) of
+
         [txIn] ->
           case readIntegerDatum info (txInInfoResolved txIn) of
+
             Nothing ->
-              traceError "invalid or missing counter datum"
+              traceError
+                "MintPolicy: invalid or missing counter datum"
 
             Just n ->
               let
@@ -376,9 +605,26 @@ mkPolicy
                   newPrizeDatumValid
                     prizeHash
                     regHash
+                    b1PrizePoolHash
                     ownCs
                     expectedName
                     ctx
+
+                treasuryOk =
+                  atomicTreasuryPaymentValid
+                    treasuryHash
+                    info
+
+                poolOk =
+                  case findSinglePrizeOutput prizeHash info of
+                    Nothing ->
+                      False
+
+                    Just pd ->
+                      atomicPoolReservationValid
+                        b1PrizePoolHash
+                        (pdPriceUsdm pd)
+                        info
 
               in
                    traceIfFalse
@@ -393,11 +639,21 @@ mkPolicy
                      "prize utxo invalid or round already revealed"
                      prizeOk
 
+                && traceIfFalse
+                     "Treasury payment missing or incorrect"
+                     treasuryOk
+
+                && traceIfFalse
+                     "B1PrizePool reservation missing or incorrect"
+                     poolOk
+
         [] ->
-          traceError "counter input not found"
+          traceError
+            "MintPolicy: counter input not found"
 
         _ ->
-          traceError "expected exactly one counter input"
+          traceError
+            "MintPolicy: expected exactly one counter input"
 
   where
     info =
@@ -409,20 +665,35 @@ mkPolicy
     minted =
       txInfoMint info
 
+-- ============================================================
+-- Untyped wrapper / compilation
+-- ============================================================
+
 {-# INLINABLE wrap #-}
 wrap
   :: ScriptHash
   -> ScriptHash
   -> ScriptHash
+  -> ScriptHash
+  -> ScriptHash
   -> BuiltinData
   -> BuiltinData
   -> BuiltinUnit
-wrap counterHash prizeHash regHash r ctx =
+wrap
+  counterHash
+  prizeHash
+  regHash
+  treasuryHash
+  b1PrizePoolHash
+  r
+  ctx =
   check
     ( mkPolicy
         counterHash
         prizeHash
         regHash
+        treasuryHash
+        b1PrizePoolHash
         (unsafeFromBuiltinData r)
         (unsafeFromBuiltinData ctx)
     )
@@ -430,6 +701,8 @@ wrap counterHash prizeHash regHash r ctx =
 compiledPolicyFactory
   :: CompiledCode
        ( ScriptHash
+         -> ScriptHash
+         -> ScriptHash
          -> ScriptHash
          -> ScriptHash
          -> BuiltinData
