@@ -1,83 +1,94 @@
-# PRE-RICH — COSTITUZIONE DEL PROTOCOLLO
 
-**Versione:** Constitution V2 — Materios / B3 alignment
-**Stato:** normativa fondamentale del protocollo
-**Ambito:** regole, invarianti, limiti di governance e principi di sicurezza del protocollo PRE-RICH
+CONSTITUTION-V3-Deterministic-Economy.md
 
----
 
-# PREAMBOLO
+PRE-RICH — COSTITUZIONE DEL PROTOCOLLO
+Versione: Constitution V3 — Deterministic Economy
+Stato: normativa fondamentale del protocollo
+Ambito: principi, invarianti, regole economiche, sicurezza, governance e limiti di autorità del protocollo PRE-RICH
 
-PRE-RICH è un protocollo di gioco on-chain costruito per operare senza la necessità di affidarsi alla buona fede di un team, di un founder, di un amministratore, di un backend o di un singolo operatore per determinare la verità economica del gioco.
+PREAMBOLO
+PRE-RICH è un protocollo di gioco on-chain progettato per operare senza affidare a un team, founder, amministratore, backend, relayer o singolo operatore la determinazione della verità economica del gioco.
 
-Il protocollo deve tendere a una proprietà fondamentale:
+La proprietà fondamentale del protocollo è:
 
-> **La validità del gioco deve derivare dalle regole verificabili del protocollo e dalle prove verificabili on-chain, non dalla fiducia in chi lo gestisce.**
+La validità del gioco deve derivare da regole deterministiche, verificabili on-chain e da prove verificabili, non dalla fiducia in chi lo gestisce.
 
 PRE-RICH deve essere:
 
-* 100% on-chain per le decisioni economiche e di sicurezza fondamentali;
-* automatico;
-* trustless;
-* pubblico;
-* verificabile;
-* open source;
-* non custodial;
-* privo di una quota economica discrezionale destinata a team, developer, founder o amministratori;
-* resistente alla manipolazione;
-* resistente al double claim;
-* resistente al risultato scelto dopo l'acquisto;
-* progettato affinché nessun componente off-chain possa diventare autorità economica del protocollo.
+automatico;
 
-La presente Costituzione definisce gli **invarianti fondamentali**.
+non custodial;
 
-Le specifiche tecniche, i PoC, il codice e i test devono implementare e dimostrare tali invarianti.
+pubblico e verificabile;
 
-Nessuna implementazione può considerarsi conforme semplicemente perché "simile" al requisito: deve dimostrare la proprietà richiesta.
+open source;
 
----
+privo di una quota economica discrezionale destinata a team, developer, founder o amministratori;
 
-# ARTICOLO 1 — PRINCIPIO FONDAMENTALE DI TRUSTLESSNESS
+resistente alla manipolazione;
 
+resistente al double claim;
+
+resistente alla scelta del risultato dopo l'acquisto;
+
+progettato affinché nessun componente off-chain possa diventare autorità economica.
+
+La presente Costituzione definisce cosa deve essere vero.
+
+Le specifiche definiscono come tali proprietà devono essere implementate.
+
+Il codice implementa le specifiche.
+
+I test e le prove dimostrano le proprietà.
+
+ARTICOLO 1 — GERARCHIA NORMATIVA
+La gerarchia normativa è:
+
+CONSTITUTION
+      ↓
+SPECIFICATIONS
+      ↓
+IMPLEMENTATION
+      ↓
+TESTS / PROOFS
+Una specifica non può autorizzare una violazione della Costituzione.
+
+Un'implementazione non è conforme semplicemente perché è “simile” alla specifica: deve soddisfare gli invarianti richiesti.
+
+ARTICOLO 2 — PRINCIPIO DI TRUSTLESSNESS
 PRE-RICH non deve richiedere fiducia in un soggetto umano per determinare:
 
-* il risultato di un ticket;
-* la randomness;
-* il vincitore;
-* il tier;
-* il payout;
-* l'attivazione del jackpot;
-* la validità del claim;
-* l'allocazione economica prevista dal protocollo;
-* la canonicalità di uno stato esterno utilizzato dal gioco.
+il risultato di un ticket;
 
-Un componente off-chain può:
+la randomness;
 
-* osservare;
-* indicizzare;
-* costruire transazioni;
-* trasportare dati;
-* produrre prove;
-* fornire una UX;
-* ritrasmettere una prova.
+il winner;
+
+il tier;
+
+il payout;
+
+l'attivazione del Jackpot;
+
+la validità del claim;
+
+la solvibilità necessaria a creare nuova esposizione;
+
+l'allocazione economica prevista dal protocollo;
+
+la canonicalità di uno stato esterno utilizzato dal gioco.
+
+Un componente off-chain può osservare, indicizzare, costruire transazioni, trasportare dati e produrre prove.
 
 Non può decidere la verità economica.
 
-Principio fondamentale:
+The publisher may submit evidence. The verifier determines validity.
 
-> **The publisher may submit evidence. The verifier determines validity.**
+The adapter may observe and prove. The adapter must not decide.
 
-E, per qualsiasi adapter esterno:
-
-> **The adapter may observe and prove. The adapter must not decide.**
-
----
-
-# ARTICOLO 2 — AUTORITÀ ON-CHAIN
-
+ARTICOLO 3 — AUTORITÀ ON-CHAIN
 Cardano costituisce il livello di enforcement economico del protocollo.
-
-Le condizioni che determinano diritti economici devono essere verificabili dai validator e dagli asset/datum on-chain.
 
 Il browser non è autorità.
 
@@ -89,1168 +100,1083 @@ Un database off-chain non è autorità.
 
 Un API endpoint non è autorità.
 
-Un nodo Materios non è, da solo, autorità sufficiente per PRE-RICH.
-
 Un provider di dati esterno non è autorità economica.
 
----
+Le condizioni che determinano diritti economici devono essere verificabili dai validator e/o da stato on-chain autenticato.
 
-# ARTICOLO 3 — SEPARAZIONE TRA EVIDENZA E VERITÀ
-
-PRE-RICH distingue formalmente tra:
-
-1. **osservazione esterna**;
-2. **evidenza crittografica**;
-3. **verifica dell'evidenza**;
-4. **stato canonico**;
-5. **decisione economica on-chain**.
-
-Nessun passaggio precedente può sostituire quello successivo.
-
-In particolare:
-
-```text
-external observation
-        ↓
-evidence
-        ↓
-verification
-        ↓
-canonical state
-        ↓
-Beacon
-        ↓
-game derivation
-        ↓
-economic settlement
-```
-
-Non è consentito saltare direttamente da:
-
-```text
-external observation
-        ↓
-economic settlement
-```
-
-quando la sicurezza del protocollo richiede una prova intermedia.
-
----
-
-# ARTICOLO 4 — STATO ATTUALE E STATO OBIETTIVO
-
+ARTICOLO 4 — STATO ATTUALE E STATO OBIETTIVO
 La documentazione deve distinguere sempre tra:
 
-* proprietà già implementate e testate;
-* proprietà parzialmente implementate;
-* proprietà ancora in sviluppo;
-* target architetturali futuri.
+proprietà implementate e testate;
 
-In particolare:
+proprietà parzialmente implementate;
 
-**B1 non deve essere presentato come B3.**
+proprietà in sviluppo;
 
-PoC-0 non deve essere presentato come prova di canonicalità.
+target architetturali futuri.
 
-PoC-1A non deve essere presentato come finality proof completo finché l'insieme dei requisiti di finalità non è verificato.
+B1 non deve essere presentato come B3.
 
-Un componente che costituisce un passo verso B3 non conferisce automaticamente lo stato B3 all'intero protocollo.
+PoC-0 non deve essere presentato come prova definitiva di canonicalità.
 
----
+PoC-1A non deve essere presentato come finality proof completo finché tutti i requisiti di finalità non sono verificati.
 
-# ARTICOLO 5 — TICKET
+ARTICOLO 5 — UNITÀ ECONOMICA CANONICA
+L'unità economica canonica di PRE-RICH è:
 
-Ogni ticket PRE-RICH deve avere un'identità unica.
+USDM
 
-Il ticket è un asset/NFT trasferibile.
+USDM è l'unità di riferimento per:
 
-Il ticket:
+prezzo dei ticket;
 
-* nasce attraverso il processo di mint autorizzato dal protocollo;
-* possiede un'identità unica;
-* è trasferibile;
-* può essere mantenuto dopo il claim;
-* può diventare un collectible storico;
-* può essere volontariamente bruciato dal proprietario secondo le regole del protocollo.
+valore dei premi;
 
-Il ticket non deve essere automaticamente distrutto come condizione necessaria del claim.
+soglie economiche;
 
-Il diritto economico è associato allo stato verificabile del ticket, non all'identità dell'acquirente originale.
+esposizione;
 
----
+reserve;
 
-# ARTICOLO 6 — SECONDARY MARKET
+safety capital;
 
-Il ticket deve essere progettato per poter essere trasferito.
+pending liabilities;
 
-Un ticket non rivelato deve poter seguire una sequenza:
+Jackpot;
 
-```text
+attivazione delle classi.
+
+Un asset diverso da USDM può essere utilizzato solo attraverso una conversione verificabile secondo le regole del protocollo.
+
+La UI non costituisce autorità sul valore economico.
+
+ARTICOLO 6 — GENESIS
+Genesis è la prima classe economica del protocollo.
+
+Il prezzo Genesis è:
+
+1 USDM
+
+Genesis è il punto di ingresso minimo della ladder economica.
+
+L'attivazione iniziale di Genesis può dipendere dal meccanismo di bootstrap PRE definito dall'economia di protocollo.
+
+Una volta attivato Genesis, l'attivazione non può essere usata retroattivamente per invalidare ticket già emessi.
+
+ARTICOLO 7 — BOOTSTRAP PRE DI GENESIS
+Il protocollo può utilizzare una posizione PRE detenuta dal Treasury per soddisfare la condizione iniziale di bootstrap.
+
+La soglia economica di riferimento è:
+
+4.000 USDM di valore verificato
+
+La condizione è:
+
+TreasuryPREValueUSDM >= 4,000 USDM
+con:
+
+TreasuryPREValueUSDM =
+    TreasuryPREQuantity × VerifiedPRE_USDMPrice
+La posizione PRE di bootstrap:
+
+non equivale automaticamente a liquidità PrizePool;
+
+non costituisce da sola una promessa di settlement;
+
+deve essere valorizzata attraverso un meccanismo verificabile;
+
+non deve essere confusa con market capitalization o fully diluted valuation.
+
+ARTICOLO 8 — LADDER DEI TICKET
+Le classi economiche previste sono:
+
+1
+2
+3
+5
+10
+25
+50
+100 USDM
+La classe Genesis è la classe da 1 USDM.
+
+Le classi superiori non vengono attivate manualmente.
+
+La loro disponibilità deriva dallo stato economico verificabile del protocollo.
+
+ARTICOLO 9 — DETERMINAZIONE DETERMINISTICA DELLA CLASSE ATTIVA
+La classe attiva deve essere determinata automaticamente.
+
+Il principio è:
+
+CurrentActiveClass =
+    highest class C for which the verified
+    post-sale economic state remains safe
+La disponibilità deve dipendere almeno da:
+
+liquidità effettiva;
+
+pending winning liabilities;
+
+unresolved-ticket reserve;
+
+locked Jackpot;
+
+safety floor;
+
+esposizione massima consentita;
+
+limiti per classe.
+
+Un operatore non può “abilitare” una classe che il modello economico considera non sostenibile.
+
+ARTICOLO 10 — EXPOSURE E RISCHIO
+PRE-RICH distingue esplicitamente tra:
+
+Riserva statistica
+Capitale accantonato per l'esposizione attesa e per una variabilità modellata.
+
+Esposizione deterministica
+Capitale richiesto per sostenere il worst case ammesso dal protocollo.
+
+La riserva statistica non deve essere descritta come garanzia assoluta di pagamento.
+
+Il protocollo deve mantenere un limite deterministico sull'esposizione economica consentita.
+
+Per una classe con prezzo P e un limite di N ticket irrisolti:
+
+WorstCaseExposure(P, N) = 500 × P × N
+perché il massimo payout normale è 500 volte il prezzo del ticket.
+
+Questo valore può essere utilizzato per impedire che il numero di ticket irrisolti superi la capacità economica definita dal protocollo.
+
+ARTICOLO 11 — RISERVA DEI TICKET IRRISOLTI
+Ogni ticket non ancora rivelato costituisce un'incertezza economica.
+
+Il protocollo deve quindi mantenere una unresolved-ticket reserve.
+
+La riserva statistica può essere modellata come:
+
+UnresolvedReserve(N) =
+    N × μ + Z × σ × sqrt(N)
+dove:
+
+N = numero di ticket irrisolti;
+
+μ = payout atteso;
+
+σ = deviazione standard del payout;
+
+Z = coefficiente di confidenza.
+
+Il modello di Genesis utilizza come riferimento:
+
+Loss       75%
+1 USDM     17%
+2.5 USDM    6%
+5 USDM      1.8%
+100 USDM    0.19%
+500 USDM    0.01%
+con valori indicativi:
+
+μ ≈ 0.65 USDM
+σ ≈ 6.676 USDM
+Z ≈ 3.09
+Questi sono parametri di modellazione.
+
+Non autorizzano la creazione di liability non sostenibili.
+
+ARTICOLO 12 — LIMITI PER CLASSE
+La gestione della capacità economica deve distinguere almeno:
+
+classe corrente;
+
+numero di ticket irrisolti per classe;
+
+esposizione massima per classe;
+
+esposizione aggregata;
+
+capacità disponibile del PrizePool.
+
+La struttura può essere rappresentata come:
+
+ClassExposure(C)
+ClassUnresolved(C)
+ClassCap(C)
+Il protocollo non deve consentire che una singola classe ad alto valore consumi implicitamente tutta la capacità disponibile senza rispettare il proprio limite.
+
+Quando necessario, la disponibilità deve essere calcolata sullo stato post-vendita.
+
+ARTICOLO 13 — HYSTERESIS
+L'attivazione e la sospensione delle classi devono utilizzare soglie diverse.
+
+Per una classe C:
+
+ActivationThreshold(C)
+    >
+SuspensionThreshold(C)
+in condizioni normali.
+
+Questo evita oscillazioni continue:
+
+ACTIVE → SUSPENDED → ACTIVE → SUSPENDED
+causate da piccole variazioni della liquidità.
+
+La hysteresis deve essere deterministica.
+
+Non può essere scelta dal relayer al momento della transazione.
+
+ARTICOLO 14 — SAFETY CIRCUIT BREAKER
+Se la solvibilità diminuisce, il protocollo riduce automaticamente l'esposizione.
+
+La sequenza di riduzione è:
+
+100
+ ↓
+50
+ ↓
+25
+ ↓
+10
+ ↓
+5
+ ↓
+3
+ ↓
+2
+ ↓
+1
+ ↓
+HALT
+La sospensione:
+
+riguarda le nuove vendite;
+
+non invalida ticket esistenti;
+
+non riduce payout cristallizzati;
+
+non modifica risultati storici.
+
+Se anche Genesis non è sostenibile, le nuove vendite devono fermarsi.
+
+ARTICOLO 15 — CLASSE CORRENTE E MASSIMA CLASSE RAGGIUNTA
+Il protocollo deve distinguere tra:
+
+CurrentActiveClass
+e:
+
+HighestClassEverActivated
+CurrentActiveClass può diminuire quando la solvibilità peggiora.
+
+HighestClassEverActivated è monotona non decrescente.
+
+Una contrazione temporanea della liquidità non deve retroattivamente cancellare il fatto che una certa classe sia stata raggiunta.
+
+Questo principio è particolarmente rilevante per il modello del Jackpot.
+
+ARTICOLO 16 — PREZZO E PAGAMENTO DEL TICKET
+Il valore economico del ticket è espresso in USDM.
+
+L'utente può pagare utilizzando:
+
+USDM;
+
+ADA;
+
+altri asset supportati dal protocollo.
+
+Quando l'asset di pagamento differisce da USDM, il protocollo determina l'equivalente attraverso una conversione verificata.
+
+Il valore del pagamento non è determinato dalla UI.
+
+La conversione deve essere effettuata utilizzando dati validati e le regole di arrotondamento del protocollo.
+
+ARTICOLO 17 — ATOMICITÀ DELLA VENDITA
+Per B1, la vendita economicamente valida deve vincolare:
+
+ticket mint
++
+Treasury payment
++
+PrizePool reservation
+alla stessa transazione o a un meccanismo on-chain equivalente che garantisca l'assenza di ticket economicamente “non pagati” o “non riservati”.
+
+Il backend non può sostituire tale vincolo con bookkeeping off-chain.
+
+ARTICOLO 18 — TREASURY
+Tutte le entrate del gioco devono entrare nel Treasury previsto dal protocollo.
+
+Non deve esistere:
+
+PLAYER → TEAM → TREASURY
+ma:
+
+PLAYER
+   ↓
+PROTOCOL TREASURY
+   ↓
+PROTOCOL-CONTROLLED CATEGORIES
+Non esiste una quota personale per team, founder, developer o administrator.
+
+ARTICOLO 19 — PRIORITÀ ECONOMICHE
+La distribuzione economica deve rispettare una logica liability-first.
+
+La priorità normativa è:
+
+pending crystallised winning liabilities;
+
+unresolved-ticket reserve;
+
+PrizePool safety capital;
+
+locked Jackpot liquidity;
+
+Reserve protection;
+
+distributable surplus.
+
+Il capitale necessario a soddisfare una priorità superiore non può essere distribuito come surplus.
+
+ARTICOLO 20 — PRIZEPOOL
+PrizePool è una componente economica protocol-controlled.
+
+In B1 il modello preferito è un PrizePool globale con stato atomico per:
+
+liquidità;
+
+unresolved reserve;
+
+unresolved count;
+
+pending liabilities;
+
+locked Jackpot;
+
+threshold;
+
+class suspension state.
+
+Una futura suddivisione del pool deve conservare equivalenti garanzie economiche globali.
+
+ARTICOLO 21 — EFFECTIVE POOL
+Il protocollo deve distinguere tra liquidità lorda e liquidità effettivamente disponibile.
+
+Concettualmente:
+
+effectivePool(A) =
+    totalLiquidity(A)
+  - pendingWinningLiabilities(A)
+  - unresolvedTicketReserve(A)
+  - lockedJackpotLiquidity(A)
+I componenti già impegnati economicamente non possono essere contati due volte.
+
+Il protocollo deve garantire:
+
+pendingWinningLiabilities
++ unresolvedTicketReserve
++ lockedJackpotLiquidity
+≤ totalLiquidity
+e quindi:
+
+effectivePool ≥ 0
+ARTICOLO 22 — PAYOUT NORMALE
+Il payout normale deriva dal risultato e dalla tabella delle Game Rules.
+
+Per la struttura corrente, il massimo payout normale è:
+
+500 × ticket price
+Pertanto:
+
+Ticket	Max normal payout
+1 USDM	500 USDM
+2 USDM	1,000 USDM
+3 USDM	1,500 USDM
+5 USDM	2,500 USDM
+10 USDM	5,000 USDM
+25 USDM	12,500 USDM
+50 USDM	25,000 USDM
+100 USDM	50,000 USDM
+Questo massimale costituisce il riferimento costituzionale per la scala del Jackpot.
+
+ARTICOLO 23 — CALCOLO DEL PREMIO
+La sequenza normativa è:
+
+REVEAL
+   ↓
+VERIFY RANDOMNESS
+   ↓
+DERIVE SYMBOLS
+   ↓
+DERIVE TIER
+   ↓
+CALCULATE EFFECTIVE POOL
+   ↓
+CALCULATE PAYOUT
+   ↓
+VERIFY SOLVENCY
+   ↓
+CRYSTALLISE
+Un payout non può superare la capacità economica ammessa dal protocollo.
+
+Per il modello corrente:
+
+Payout ≤ EffectivePool_before_reveal
+quando la transizione di reveal richiede tale condizione.
+
+ARTICOLO 24 — CRISTALLIZZAZIONE
+Al reveal di un ticket vincente devono diventare determinati on-chain:
+
+result;
+
+tier;
+
+payout;
+
+claimability;
+
+expiry;
+
+informazioni economiche necessarie alla verifica storica.
+
+Dopo la cristallizzazione:
+
+FrozenPayout = immutable
+Un futuro cambiamento del PrizePool non può modificare il payout.
+
+ARTICOLO 25 — FLOOR DEL PREMIO
+Il protocollo non adotta un floor indipendente che possa forzare la creazione di una liability non sostenibile.
+
+Il principio costituzionale è:
+
+La correttezza del risultato economico è subordinata alla solvibilità verificabile del protocollo.
+
+Qualunque minimum prize effettivamente utilizzato deve essere coerente con la struttura di esposizione e con il capitale disponibile.
+
+Un semplice messaggio UI non può trasformarsi in una promessa economica.
+
+ARTICOLO 26 — SETTLEMENT MULTI-ASSET
+Il premio è denominato economicamente in USDM.
+
+Se il PrizePool non dispone di sufficiente USDM ma dispone di un asset di settlement approvato, il protocollo può soddisfare la stessa obbligazione attraverso conversione verificata.
+
+Esempio:
+
+FrozenPrize = 10,000 USDM
+Il settlement può utilizzare ADA o altro asset supportato.
+
+Il cambio di asset non riduce il valore economico del premio.
+
+La conversione deve impedire il sotto-pagamento.
+
+Oracle assente, stale, non autorizzato o incoerente deve causare il fallimento della transazione quando l'oracle è necessario.
+
+ARTICOLO 27 — JACKPOT: PRINCIPIO
+Il Jackpot è economicamente separato dalla normale distribuzione dei cinque simboli.
+
+La sua attivazione non modifica la distribuzione normale:
+
+1 2 3 4 5
+Il Jackpot non è una decisione amministrativa.
+
+La sua attivazione deve derivare dallo stato economico verificato.
+
+ARTICOLO 28 — JACKPOT A GRADINI
+Il Jackpot deve essere significativamente superiore al massimo payout normale.
+
+Definendo:
+
+M = 500 × HighestClassEverActivated
+la ladder di riferimento è:
+
+J1 = 10 × M
+J2 = 20 × M
+J3 = 50 × M
+J4 = 100 × M
+J5 = 250 × M
+Alla sola classe Genesis:
+
+M = 500 USDM
+e quindi:
+
+Livello	Jackpot
+J1	5,000 USDM
+J2	10,000 USDM
+J3	25,000 USDM
+J4	50,000 USDM
+J5	125,000 USDM
+Quando viene raggiunta una classe superiore, la scala futura del Jackpot cresce proporzionalmente.
+
+La struttura è monotona rispetto alla massima classe storicamente attivata.
+
+ARTICOLO 29 — JACKPOT THRESHOLD E JACKPOT BALANCE
+Il protocollo deve distinguere tra:
+
+JackpotThreshold
+e:
+
+LockedJackpotBalance
+Il threshold stabilisce quando un determinato livello può diventare attivo.
+
+Il balance rappresenta la liquidità effettivamente accumulata per il Jackpot.
+
+Il protocollo non deve confondere un semplice threshold con una disponibilità economica effettiva.
+
+ARTICOLO 30 — FINANZIAMENTO DEL JACKPOT
+Il Jackpot deve essere finanziato esclusivamente da capitale che rimane economicamente disponibile dopo le priorità obbligatorie.
+
+Il finanziamento del Jackpot non può essere effettuato sacrificando:
+
+crystallised liabilities;
+
+unresolved reserve;
+
+safety capital;
+
+riserve necessarie.
+
+Il tasso di allocazione al Jackpot può essere governabile entro limiti costituzionali, ma la regola deve essere deterministica.
+
+ARTICOLO 31 — JACKPOT E EFFECTIVE POOL
+La liquidità destinata al Jackpot diventa economicamente separata.
+
+Per questo motivo:
+
+lockedJackpotLiquidity
+deve essere sottratta da effectivePool quando non è contemporaneamente rappresentata in altre liability.
+
+Il Jackpot non può essere conteggiato due volte.
+
+Il finanziamento di un livello Jackpot deve lasciare verificabile la solvibilità dello stato risultante.
+
+ARTICOLO 32 — VINCITORE DEL JACKPOT
+La selezione del ticket Jackpot deve derivare dalla randomness canonica.
+
+Nessun backend, relayer, administrator o publisher può:
+
+scegliere il vincitore;
+
+scegliere il ticket;
+
+assegnare retroattivamente il Jackpot;
+
+modificare il Jackpot dopo avere osservato il risultato.
+
+La randomness del Jackpot deve essere domain-separated dalla derivazione dei simboli normali quando la specifica lo richiede.
+
+ARTICOLO 33 — PAYOUT DEL JACKPOT
+Quando il Jackpot viene vinto, l'obbligazione deve essere cristallizzata secondo una regola deterministica.
+
+Il payout Jackpot deve derivare esclusivamente dallo stato on-chain del Jackpot e dalla regola di Jackpot vigente al momento della determinazione.
+
+Una volta cristallizzato:
+
+FrozenJackpotPayout = immutable
+Il payout non può essere ridotto successivamente perché il pool diminuisce.
+
+ARTICOLO 34 — RESET DEL JACKPOT
+Dopo una vincita Jackpot, il capitale effettivamente trasferito nell'obbligazione del vincitore non deve continuare a essere considerato locked Jackpot liquidity.
+
+Il meccanismo di ricostruzione del Jackpot deve essere deterministico.
+
+HighestClassEverActivated non retrocede dopo una vincita Jackpot.
+
+Il nuovo Jackpot ricomincia quindi a costruirsi secondo la scala e i limiti applicabili allo stato storico raggiunto dal protocollo.
+
+ARTICOLO 35 — TICKET
+Ogni ticket deve avere:
+
+identità unica;
+
+binding crittografico;
+
+owner verificabile;
+
+stato economico verificabile;
+
+expiry verificabile;
+
+storia verificabile.
+
+Il ticket è un NFT/native asset trasferibile.
+
+ARTICOLO 36 — SECONDARY MARKET
+Il diritto economico segue il ticket.
+
+Una sequenza valida può essere:
+
 Alice
-  ↓
+ ↓
 Bob
-  ↓
+ ↓
 Charlie
-  ↓
+ ↓
 Reveal
-```
-
 Il trasferimento non deve modificare il risultato.
 
 Il trasferimento non deve permettere di determinare il risultato prima del reveal.
 
-Il diritto economico, quando esistente, segue il ticket secondo le regole on-chain.
+Un ticket vincente non reclamato può essere trasferibile, quando il protocollo lo consente.
 
-Un ticket vincente non reclamato deve poter essere trasferito, salvo eventuali limiti esplicitamente stabiliti dalle specifiche definitive.
+ARTICOLO 37 — RETENTION DELL'NFT
+Il claim non richiede obbligatoriamente la distruzione del ticket.
 
----
+Un ticket dopo il claim può conservare:
 
-# ARTICOLO 7 — PREZZO DEL TICKET
+identità;
 
-Il prezzo canonico iniziale del ticket è:
+risultato;
 
-**2 USDM.**
+tier;
 
-La rappresentazione economica e l'eventuale pagamento in ADA, PRE o USDM devono essere definiti da regole verificabili.
+payout storico;
 
-Quando un oracle di prezzo è necessario, il valore utilizzato dal protocollo deve essere verificabile on-chain.
+stato CLAIMED;
 
-Il frontend può mostrare una conversione o una stima, ma la rappresentazione mostrata all'utente non costituisce prova economica.
+Jackpot status;
 
-Nessuna UI può trasformare un valore off-chain in un'autorità implicita.
+storia dei trasferimenti.
 
----
+Il ticket può avere valore collezionistico anche dopo l'esercizio del diritto economico.
 
-# ARTICOLO 8 — OPACITÀ PRE-REVEAL
+ARTICOLO 38 — BURN VOLONTARIO
+Il proprietario può scegliere:
 
-Prima del reveal, le informazioni pubblicamente disponibili non devono permettere di determinare o dedurre in modo significativo:
+CLAIM + KEEP NFT
+oppure:
 
-* simboli;
-* tier;
-* payout;
-* jackpot;
-* winning status.
+CLAIM + BURN NFT
+Il burn:
 
-L'invariante fondamentale è:
+non è un claim;
 
-> **Nessuna informazione pubblicamente disponibile prima del reveal di un ticket deve consentire di determinare o dedurre in modo significativo il simbolo, il tier, il premio o l'eventuale jackpot associato a quel ticket.**
+non genera refund;
 
-La proprietà deve essere trattata come una proprietà verificabile e testabile.
+non genera bonus;
 
-Non è sufficiente dichiararla nella documentazione.
+non crea un nuovo diritto economico.
 
-Questo requisito comprende:
+CLAIM ≠ BURN
 
-* datum;
-* asset;
-* token metadata;
-* transaction structure;
-* timing;
-* transfer;
-* commitment;
-* beacon references;
-* informazioni esposte dal backend;
-* informazioni esposte dalla UI;
-* dati pubblicamente osservabili sulla blockchain.
-
----
-
-# ARTICOLO 9 — COMMIT-REVEAL
-
+ARTICOLO 39 — COMMIT-REVEAL
 PRE-RICH utilizza un modello commit-reveal.
 
-La sequenza fondamentale è:
+Il commitment deve essere legato al contesto del ticket, inclusi quando applicabili:
 
-```text
-COMMIT
-  ↓
-LOCK / BIND
-  ↓
-REVEAL
-  ↓
-RANDOMNESS
-  ↓
-RESULT
-```
+game;
 
-Il player secret deve essere vincolato crittograficamente al ticket.
+round;
 
-Il commitment deve essere legato almeno a:
+ticket identity;
 
-* game;
-* round;
-* ticket identity;
-* ticket nonce;
-* protocol/game version;
-* configurazione pertinente;
-* eventuali altri parametri necessari a impedire replay o substitution.
+ticket nonce;
+
+protocol version;
+
+configuration context.
 
 Il reveal deve essere verificato on-chain.
 
-Il giocatore non deve poter scegliere il risultato dopo aver osservato informazioni sufficienti a determinarlo.
+Il giocatore non può scegliere un risultato dopo avere ottenuto informazioni sufficienti per selezionarlo.
 
----
+ARTICOLO 40 — RANDOMNESS
+La randomness deve essere:
 
-# ARTICOLO 10 — DOMAIN SEPARATION
+deterministica rispetto agli input canonici;
 
+imprevedibile prima della disponibilità degli input necessari;
+
+domain-separated;
+
+immune al modulo bias quando applicabile;
+
+derivata attraverso regole identiche in Plutus e TypeScript.
+
+La derivazione non può essere scelta da frontend, backend o relayer.
+
+ARTICOLO 41 — DOMAIN SEPARATION
 Ogni derivazione crittografica distinta deve utilizzare domain separation.
 
 Le domain string devono essere:
 
-* esplicite;
-* versionate;
-* stabili;
-* documentate;
-* condivise tra implementazione on-chain e off-chain;
-* testate con golden vectors.
+esplicite;
 
-Una modifica della domain separation costituisce una modifica della logica del protocollo e deve essere trattata come breaking protocol change.
+versionate;
 
----
+documentate;
 
-# ARTICOLO 11 — RANDOMNESS
+condivise tra on-chain e off-chain;
 
-La randomness del ticket deve essere deterministica rispetto agli input canonici ma imprevedibile prima che tali input diventino disponibili.
+coperte da golden vectors.
 
-Il modello concettuale è:
+Una modifica della domain separation che altera i risultati costituisce breaking protocol change.
 
-```text
-GameRoundCommitment
-        +
-canonical Beacon
-        +
-player secret / ticket commitment
-        ↓
-Master Random
-        ↓
-Symbols
-        ↓
-Tier
-        ↓
-Prize
-```
+ARTICOLO 42 — OPACITÀ PRE-REVEAL
+Prima del reveal, nessuna informazione pubblicamente disponibile deve consentire di determinare o dedurre significativamente:
 
-La randomness deve garantire:
+simbolo;
 
-* forte commitment;
-* reveal verificabile;
-* domain separation;
-* assenza di modulo bias quando applicabile;
-* rejection sampling quando necessario;
-* resistenza al grinding;
-* impossibilità di scegliere il risultato dopo aver visto il ticket;
-* impossibilità per un relayer di scegliere il risultato;
-* impossibilità per un backend di scegliere il risultato;
-* fallback/timeout permissionless quando previsto dall'architettura.
+tier;
 
----
+payout;
 
-# ARTICOLO 12 — GAME ROUND COMMITMENT
+winning status;
 
-Ogni round deve avere un'identità canonica.
+Jackpot status.
 
-Il GameRoundCommitment deve legare almeno:
+Questo requisito riguarda anche:
 
-* game identity;
-* round identity;
-* configuration hash;
-* protocol version.
+datum;
 
-Il GameRoundCommitment non deve essere confuso con la randomness.
+metadata;
 
-È un primitive di binding e integrità.
+transaction structure;
 
-La sua funzione è impedire che dati appartenenti a game, round o configurazioni differenti vengano combinati successivamente.
+commitment;
 
----
+timing;
 
-# ARTICOLO 13 — BEACON
+transfer;
 
-Il Beacon è un input critico del gioco.
+beacon references;
 
-Il Beacon non deve essere trattato come semplice dato fornito da un operatore.
+backend exposure;
 
-Il protocollo distingue:
+UI exposure.
 
-### B1
-
-Beacon derivato da dati esterni pubblicati attraverso un percorso autorizzato.
-
-B1 mantiene una componente di fiducia nell'autorità che pubblica l'evidenza.
-
-### B2
-
-Beacon supportato da un insieme di attestatori/comitato.
-
-B2 elimina la dipendenza da un singolo publisher ma conserva un trust assumption sul comitato.
-
-### B3
-
-Beacon derivato esclusivamente da stato esterno la cui canonicalità è verificata indipendentemente dal publisher.
-
-B3 è il target architetturale di PRE-RICH.
-
----
-
-# ARTICOLO 14 — DEFINIZIONE DI B3
-
-B3 non significa semplicemente:
-
-```text
-un relayer ha pubblicato un root
-```
-
-né:
-
-```text
-un nodo Materios dice "finalized"
-```
-
-né:
-
-```text
-un publisher ha firmato il root
-```
-
-B3 richiede concettualmente:
-
-```text
-Unique Anchor
-        AND
-Publisher-Independent Canonicality
-        AND
-On-Chain Verifiable Proof
-```
-
-Per un riferimento esterno `ref` e root `root`:
-
-```text
-Checkpoint(round) → ref
-
-Canonical(ref, root)
-
-VerifyCanonical(ref, root, proof) = true
-```
-
-Il publisher non deve poter scegliere quale root diventa canonico.
-
----
-
-# ARTICOLO 15 — CANONICAL CHECKPOINT
-
-Il checkpoint canonico deve essere deterministico.
-
-La funzione di checkpoint deve essere definita da regole versionate che stabiliscano, ove pertinenti:
-
-* network/genesis identity;
-* round;
-* checkpoint reference;
-* domain separator;
-* encoding;
-* protocol version;
-* finality rule;
-* stale/timeout behavior.
-
-Il concetto:
-
-```text
-finalized_head_at_query_time
-```
-
-è sufficiente come evidenza PoC-0, ma non costituisce da solo la definizione finale di canonicalità B3.
-
-La canonicalità deve essere legata a un checkpoint determinabile indipendentemente dal soggetto che presenta la prova.
-
----
-
-# ARTICOLO 16 — MATERIOS
-
-Materios può fornire lo stato esterno utilizzato dal protocollo.
-
-PRE-RICH non deve però assumere che:
-
-```text
-Materios RPC response = truth
-```
-
-L'architettura deve poter evolvere verso:
-
-```text
-Materios
-   ↓
-finalized state
-   ↓
-consensus/finality evidence
-   ↓
-state/storage evidence
-   ↓
-proof
-   ↓
-Cardano verifier
-   ↓
-canonical anchor
-```
-
-L'integrazione con Materios deve pertanto essere considerata una fonte di dati/evidenza, non una delega dell'autorità economica.
-
----
-
-# ARTICOLO 17 — ADAPTER ESTERNO A MATERIOS
-
-L'adapter esterno PRE-RICH può:
-
-* interrogare Materios;
-* recuperare header;
-* recuperare state root;
-* recuperare authority state;
-* recuperare finality evidence;
-* recuperare storage proof;
-* decodificare SCALE;
-* costruire prove;
-* produrre artefatti verificabili.
-
-L'adapter non deve essere trusted per la correttezza del risultato.
-
-Un adapter compromesso deve poter al massimo produrre:
-
-```text
-invalid evidence
-```
-
-che il verifier deve rifiutare.
-
-Non deve poter produrre:
-
-```text
-invalid evidence accepted as canonical truth
-```
-
----
-
-# ARTICOLO 18 — PoC-0
-
-PoC-0 è un componente di evidence extraction.
-
-PoC-0 dimostra che è possibile ottenere da Materios dati quali:
-
-* finalized head;
-* header;
-* block hash;
-* state root;
-* runtime version;
-* GRANDPA authorities;
-* GRANDPA set ID;
-* authority commitment;
-* CanonicalCheckpoint.
-
-PoC-0 non costituisce:
-
-* prova indipendente di finalità;
-* prova di canonicalità;
-* storage proof;
-* B3;
-* fairness oracle.
-
-Il suo ruolo è fornire l'evidenza necessaria alle fasi successive.
-
----
-
-# ARTICOLO 19 — PoC-1 / GRANDPA
-
-La verifica GRANDPA deve essere indipendente dal nodo Materios interrogato.
-
-Un verifier non deve semplicemente chiedere al nodo:
-
-> "questo blocco è finalizzato?"
-
-Deve verificare l'evidenza crittografica fornita.
-
-La verifica deve comprendere, secondo la specifica definitiva:
-
-* chain identity;
-* genesis identity;
-* authority set corretto;
-* set ID;
-* target hash;
-* target block number;
-* signer identity;
-* firma;
-* authority weight;
-* quorum;
-* round;
-* eventuale ancestry necessaria;
-* transizioni di authority set quando richieste.
-
-Il quorum GRANDPA deve essere verificato matematicamente.
-
-La condizione di quorum è:
-
-```text
-3 × signedWeight > 2 × totalWeight
-```
-
-e non deve essere implementata attraverso floating point o approssimazioni.
-
----
-
-# ARTICOLO 20 — CRYPTOGRAPHIC ALGORITHM BINDING
-
-L'algoritmo crittografico effettivamente utilizzato dal consenso Materios deve essere derivato dalla specifica/codice reale del consenso e non da supposizioni.
-
-La verifica attualmente esplorata nel PoC-1A utilizza Ed25519.
-
-Qualsiasi implementazione definitiva deve mantenere una corrispondenza verificata tra:
-
-```text
-Materios runtime
-        ↕
-PoC decoder
-        ↕
-crypto verifier
-        ↕
-future Cardano verifier
-```
-
-Una sostituzione arbitraria di Ed25519 con un altro schema non è ammessa senza nuova verifica della compatibilità.
-
----
-
-# ARTICOLO 21 — AUTHORITY STATE
-
-Un verifier deve distinguere tra:
-
-* authority state osservato dal relayer;
-* authority state trusted;
-* authority state dimostrato.
-
-PoC-1A può utilizzare un `TrustedAuthorityState` come fase intermedia di sviluppo.
-
-Questo non equivale ancora a B3.
-
-Il percorso verso B3 deve eliminare progressivamente la necessità di affidarsi a un'autorità off-chain per sapere quale authority set sia canonico.
-
----
-
-# ARTICOLO 22 — ANCESTRY
-
-Una firma GRANDPA valida e un quorum valido non devono essere automaticamente considerati sufficienti quando la verifica richiede anche una prova di ancestry.
-
-Il verifier deve fallire chiudendo il percorso quando i dati necessari all'ancestry non sono disponibili o verificabili.
-
-Non è consentito trasformare un controllo non implementato in un controllo implicitamente "vero".
-
-Principio:
-
-> **Missing proof means rejection, not assumption.**
-
----
-
-# ARTICOLO 23 — STORAGE PROOF E STATO CANONICO
-
-Per raggiungere B3, la finalità del blocco non è sufficiente.
-
-È necessario dimostrare che lo stato utilizzato dal gioco contiene effettivamente l'oggetto previsto.
-
-Il proof statement deve legare almeno:
-
-```text
-roundId
-checkpointRef
-stateRoot
-deterministic key
-expected state value
-proof
-```
-
-La chiave deve essere deterministica e domain-separated.
-
-Concettualmente:
-
-```text
-K =
-H(
-  "PRE-RICH/MATERIOS/BEACON/V1"
-  ||
-  roundId
-  ||
-  checkpointRef
-)
-```
-
-Il proof deve dimostrare l'inclusione del valore associato a tale chiave nello stato canonico.
-
----
-
-# ARTICOLO 24 — CANONICAL BEACON ANCHOR
-
-Il risultato verificato deve essere trasformato in un'ancora canonica on-chain.
-
-L'ancora deve legare almeno:
-
-* round;
-* checkpoint reference;
-* root;
-* context;
-* commitment/proof reference;
-* stato di finalizzazione.
-
-L'ancora deve impedire:
-
-* conflicting root;
-* replay;
-* stale proof;
-* wrong round;
-* wrong checkpoint;
-* wrong target;
-* second finalization;
-* sostituzione arbitraria del root.
-
-Una volta finalizzata l'ancora, il Beacon del round deve derivare esclusivamente dai dati canonici verificati.
-
----
-
-# ARTICOLO 25 — BEACON NON È L'ORACLE DELLA FAIRNESS
-
-Il Beacon non è un'autorità umana.
-
-Il relayer può trasportare il Beacon.
-
-Il relayer non può scegliere il Beacon.
-
-Il backend può mostrare il Beacon.
-
-Il backend non può scegliere il Beacon.
-
-L'adapter può derivare una prova.
-
-L'adapter non può scegliere quale stato è vero.
-
-La fairness nasce dalla combinazione verificabile di:
-
-```text
-canonical round
-+
-canonical external state
-+
-verified proof
-+
-player commitment
-+
-player reveal
-```
-
----
-
-# ARTICOLO 26 — DERIVAZIONE DEI SIMBOLI
-
-I simboli devono essere derivati deterministicamente dagli input canonici.
-
-Le derivazioni devono essere domain-separated.
-
-Il set di cinque simboli normali rimane:
-
-```text
-1 2 3 4 5
-```
-
-Il protocollo non deve consentire a frontend, backend o relayer di fornire direttamente i simboli come dato autorevole.
-
-Il validator deve essere in grado di ricalcolare il risultato.
-
----
-
-# ARTICOLO 27 — TIER
-
-Il tier deve essere derivato dal vector dei simboli attraverso le Game Rules canoniche.
-
-Il risultato non deve essere accettato sulla base di:
-
-```text
-user supplied tier
-backend supplied tier
-relayer supplied tier
-receipt supplied tier
-```
-
-quando tale valore può essere ricavato on-chain dagli input verificati.
-
-Il tier deve essere una conseguenza delle regole, non un parametro arbitrario.
-
----
-
-# ARTICOLO 28 — JACKPOT
-
-Il jackpot deve essere una proprietà del protocollo, non una decisione amministrativa.
-
-La sua eventuale attivazione deve essere determinata da condizioni on-chain.
-
-Concettualmente:
-
-```text
-effectivePool >= jackpotThreshold
-        ↓
-jackpot active
-```
-
-La selezione del ticket jackpot deve derivare dalla randomness canonica.
-
-Nessun backend può:
-
-* attivare il jackpot;
-* scegliere il ticket;
-* assegnare il jackpot;
-* modificare retroattivamente il jackpot.
-
-Finché l'intero meccanismo non è implementato e verificato on-chain, il jackpot deve essere considerato una proprietà normativa/target e non una feature già conclusa.
-
----
-
-# ARTICOLO 29 — LIQUIDITÀ E EFFECTIVE POOL
-
-Il protocollo deve distinguere tra:
-
-```text
-TOTAL POOL
-```
-
-e:
-
-```text
-EFFECTIVE LIQUIDITY
-```
-
-La liquidità disponibile non è semplicemente il valore grezzo di un UTxO.
-
-Devono essere considerate almeno:
-
-* pending winning liabilities;
-* unresolved-ticket reserve;
-* obbligazioni economiche già cristallizzate;
-* vincoli di solvibilità del protocollo.
-
-Un importo già promesso a un giocatore non deve essere considerato nuovamente come liquidità liberamente disponibile.
-
-`effectivePool` deve diventare una quantità verificabile e non una semplice variabile calcolata dal frontend.
-
----
-
-# ARTICOLO 30 — PRIZE CALCULATION
-
-Il premio viene determinato al reveal.
-
-La sequenza normativa è:
-
-```text
-Reveal
-  ↓
-Symbols
-  ↓
-Tier
-  ↓
-Effective Pool
-  ↓
-Payout
-  ↓
-Payout Frozen
-```
-
-Il claim non deve ricalcolare un nuovo premio sulla base dello stato economico futuro del protocollo.
-
-Il claim deve utilizzare il payout già cristallizzato.
-
----
-
-# ARTICOLO 31 — FLOOR DEL PREMIO
-
-Il minimo economico previsto dal modello iniziale è:
-
-**2 USDM.**
-
-Il floor deve essere compatibile con le regole di solvibilità.
-
-Il protocollo non deve promettere un payout che non possa essere sostenuto dalle regole on-chain definitive.
-
-Il floor non deve essere implementato come una semplice promessa UI.
-
----
-
-# ARTICOLO 32 — PAYOUT CRISTALLIZZATO
-
-Al reveal devono essere fissati on-chain:
-
-* result;
-* tier;
-* payout;
-* claimability;
-* expiry;
-* eventuali dati economici necessari alla verifica storica.
-
-Dopo la cristallizzazione:
-
-```text
-future pool changes
-```
-
-non devono modificare il payout già assegnato.
-
-Questo impedisce che il giocatore abbia un incentivo economico a ritardare il claim per cercare condizioni future migliori.
-
----
-
-# ARTICOLO 33 — STATO DEL TICKET
-
-Il modello economico fondamentale è:
-
-```text
-UNREVEALED
-     ↓
-REVEALED
-     ↓
-CLAIMED
-```
-
-Il risultato può essere:
-
-```text
-WIN
-LOSS
-```
-
-Un loss è uno stato verificabile, non un ticket inesistente.
-
-Lo stato `CLAIMED` deve impedire ogni secondo pagamento.
-
-Il protocollo deve impedire:
-
-```text
-CLAIMED → second payout
-```
-
-on-chain.
-
----
-
-# ARTICOLO 34 — CLAIM
-
-Il claim è permissionless entro le condizioni definite dal protocollo.
-
-Il diritto economico deve essere determinato dal ticket e dal suo stato on-chain.
+ARTICOLO 43 — CLAIM
+Il claim deve essere permissionless entro le condizioni del protocollo.
 
 Il claimant deve dimostrare la proprietà del ticket secondo le regole on-chain.
 
 Il claim:
 
-* può essere eseguito una sola volta;
-* deve utilizzare il payout congelato;
-* non deve dipendere da una decisione manuale;
-* non deve richiedere autorizzazione del team.
+può essere eseguito una sola volta;
 
----
+deve utilizzare il payout congelato;
 
-# ARTICOLO 35 — NFT DOPO IL CLAIM
+non deve richiedere autorizzazione del team;
 
-Il claim non deve obbligatoriamente distruggere il ticket.
+non deve dipendere dal backend come autorità.
 
-Il ticket può diventare:
+Lo stato:
 
-```text
-game asset
-+
-proof/history
-+
-collectible
-```
+CLAIMED
+deve impedire:
 
-Un ticket vincente può conservare informazioni storiche verificabili.
+CLAIMED → second payout
+ARTICOLO 44 — SCADENZA
+La validità economica iniziale prevista è:
 
-La distruzione volontaria dell'NFT non deve creare automaticamente un nuovo diritto economico.
+almeno 365 giorni
 
----
+Il ticket deve essere creato con:
 
-# ARTICOLO 36 — BURN
-
-Il proprietario può eventualmente scegliere:
-
-```text
-CLAIM
-+
-KEEP NFT
-```
-
-oppure:
-
-```text
-CLAIM
-+
-BURN NFT
-```
-
-Il burn non costituisce di per sé un claim.
-
-Un ticket vincente non deve poter essere accidentalmente bruciato prima che il diritto economico sia stato correttamente gestito, quando ciò sia tecnicamente impedibile senza violare gli altri principi del protocollo.
-
----
-
-# ARTICOLO 37 — SCADENZA
-
-La durata iniziale prevista è:
-
-**almeno 365 giorni.**
-
-La scadenza deve essere fissata alla creazione:
-
-```text
 issuedAt
-expiresAt = issuedAt + minimum validity
-```
+expiresAt
+e:
 
-`expiresAt` non deve essere ricalcolato al reveal.
+expiresAt >= issuedAt + minimum validity
+expiresAt non deve essere ricalcolato al momento del reveal.
 
-La scadenza rappresenta principalmente il termine del diritto economico, non necessariamente la cancellazione del ticket dalla storia del protocollo.
+ARTICOLO 45 — REVEAL STORICO DOPO SCADENZA
+Il protocollo può consentire:
 
----
-
-# ARTICOLO 38 — REVEAL STORICO DOPO LA SCADENZA
-
-Il protocollo può consentire il reveal storico dopo la scadenza.
-
-Il modello desiderato è:
-
-```text
-expired ticket
-      ↓
-historical reveal
-      ↓
+EXPIRED
+  ↓
+HISTORICAL REVEAL
+  ↓
 WIN / LOSS
-```
-
 ma:
 
-```text
-expired winning ticket
-      ↓
-no economic claim
-```
+EXPIRED WIN
+  ↓
+NO ECONOMIC CLAIM
+Il valore storico del ticket può essere conservato senza riaprire un diritto economico scaduto.
 
-Il risultato storico deve poter essere verificato senza riaprire un diritto economico scaduto.
+ARTICOLO 46 — ORACLE
+Un oracle fornisce un dato.
 
----
+Non decide la verità economica.
 
-# ARTICOLO 39 — TREASURY
+Quando un oracle viene utilizzato per:
 
-Tutte le entrate economiche del protocollo devono entrare direttamente nel sistema Treasury/PrizePool previsto dal protocollo.
+conversione di prezzo;
 
-Non deve esistere:
+solvibilità;
 
-```text
-User
- ↓
-Team
- ↓
-Treasury
-```
+settlement;
 
-La struttura deve essere:
+attivazione;
 
-```text
-User
- ↓
-Protocol treasury
- ↓
-Protocol-controlled categories
-```
+devono essere definiti:
 
-Non deve esistere una quota economica personale per:
+asset identity;
 
-* team;
-* founder;
-* developer;
-* administrator.
+precision;
 
----
+freshness;
 
-# ARTICOLO 40 — MAINTENANCE
+authorization;
 
-La maintenance è una categoria del protocollo.
+rounding;
 
-Non è:
+failure behaviour.
 
-```text
-team wallet
-```
+Dati stale, mancanti, non autorizzati o incoerenti devono essere rifiutati quando necessari.
 
-Non può essere trasformata in una quota discrezionale personale attraverso una semplice modifica della UI o del backend.
-
-Qualunque destinazione economica definitiva deve essere verificabile attraverso le regole on-chain.
-
----
-
-# ARTICOLO 41 — TREASURY DISTRIBUTION
-
-La distribuzione deve essere automatica e deterministica.
-
-Il modello iniziale documentato prevede percentuali configurabili per:
-
-* Prize;
-* Stake;
-* Reserve;
-* Relayer reward.
-
-I valori effettivi sono parametri operativi e non devono essere confusi con gli invarianti costituzionali.
-
-Il relayer reward è una ricompensa per l'esecuzione di una funzione permissionless/automatizzata e non costituisce una quota di proprietà del protocollo.
-
----
-
-# ARTICOLO 42 — RELAYER
-
-Il relayer è un facilitatore.
+ARTICOLO 47 — RELAYER
+Il relayer è un facilitatore sostituibile.
 
 Può:
 
-* osservare il Treasury;
-* osservare le condizioni operative;
-* costruire transazioni;
-* pubblicare evidenza;
-* eseguire operazioni automatiche previste dal protocollo;
-* ricevere una ricompensa definita dalle regole.
+osservare;
+
+costruire transazioni;
+
+trasportare evidenza;
+
+facilitare operazioni permissionless;
+
+ricevere una ricompensa definita dalle regole.
 
 Non può:
 
-* decidere il risultato;
-* scegliere il winner;
-* scegliere il tier;
-* scegliere il payout;
-* scegliere il jackpot;
-* alterare la randomness;
-* sostituire una prova con una propria dichiarazione;
-* modificare arbitrariamente la canonicalità.
+decidere risultati;
 
-Il relayer deve poter fallire senza compromettere la verità economica del protocollo.
+scegliere winner;
 
----
+scegliere tier;
 
-# ARTICOLO 43 — BACKEND
+scegliere payout;
 
-Il backend può essere utilizzato per:
+scegliere Jackpot;
 
-* indicizzazione;
-* UX;
-* caching;
-* costruzione di transazioni;
-* notifiche;
-* facilitazione di reveal;
-* facilitazione di claim;
-* raccolta di evidenze;
-* generazione di prove.
+alterare canonicalità;
 
-Il backend non è autorità per:
+sostituire una proof valida con una propria dichiarazione.
 
-* winner;
-* symbols;
-* tier;
-* payout;
-* randomness;
-* jackpot;
-* treasury allocation;
-* claim validity;
-* canonical state.
+La perdita del relayer non deve trasformarlo in autorità economica.
 
-La perdita completa del backend non deve rendere falso lo stato on-chain.
+ARTICOLO 48 — BACKEND
+Il backend può:
 
----
+indicizzare;
 
-# ARTICOLO 44 — ORACLE
+fornire UX;
 
-Un oracle esterno può fornire informazioni necessarie al protocollo, per esempio dati di prezzo.
+costruire transazioni;
 
-Tuttavia:
+notificare;
 
-```text
-oracle data
-```
+raccogliere evidenza;
 
-non deve diventare automaticamente:
+generare prove.
 
-```text
-economic truth
-```
+Non può decidere:
 
-Il dato deve essere verificato secondo le regole del protocollo.
+winner;
 
-L'utilizzo definitivo di un oracle per conversioni economiche richiede binding on-chain e test coerenti con l'invariante.
+symbols;
 
----
+tier;
 
-# ARTICOLO 45 — ORYNQ
+payout;
 
-Orynq può essere utilizzato come livello di audit, proof bundle e dispute resolution.
+randomness;
 
-Può fornire evidenza relativa a:
+Jackpot;
 
-* ticket;
-* receipt;
-* transaction hashes;
-* commitment;
-* reveal;
-* result;
-* Materios batch root;
-* proof digest.
+claim validity;
 
-Orynq non costituisce autorità economica finale.
+treasury entitlement;
 
-Una prova Orynq non deve poter sostituire una verifica on-chain richiesta dal protocollo.
+canonical state.
 
----
+ARTICOLO 49 — BEACON E B1/B2/B3
+B1
+Il Beacon può essere pubblicato attraverso un percorso autorizzato.
 
-# ARTICOLO 46 — RECEIPT
+B2
+Il Beacon può essere supportato da un insieme di attestatori.
 
-Una receipt deve essere legata al ticket corretto.
+B3
+Il Beacon deve derivare da stato esterno la cui canonicalità è verificata indipendentemente dal publisher.
 
-Gli elementi rilevanti devono essere crittograficamente coerenti con:
+B1 non deve essere presentato come B3.
 
-* ticketId;
-* purchase transaction;
-* commitment;
-* reveal;
-* game version;
-* result;
-* eventuale Materios root/context;
-* proof digest.
+Un publisher non deve essere confuso con la fonte della verità.
 
-Una receipt può essere una prova/audit artifact.
+ARTICOLO 50 — MATERIOS E PROOF
+Materios può fornire:
 
-Non deve diventare una scorciatoia per accettare dati non verificati.
+finalized state;
 
----
+header;
 
-# ARTICOLO 47 — DETERMINISTIC ENCODING
+state root;
 
-Qualunque dato utilizzato in una derivazione crittografica deve avere un encoding canonico.
+authority data;
 
-Devono essere definiti:
+evidence.
 
-* ordine dei campi;
-* lunghezze;
-* encoding integer;
-* byte order;
-* domain separator;
-* versioning;
-* representation of empty values.
+La risposta RPC non costituisce automaticamente verità.
 
-L'implementazione TypeScript e l'implementazione Plutus devono produrre lo stesso digest.
+Il percorso verso B3 deve essere:
 
-Golden vectors devono essere utilizzati per impedire divergenze silenziose.
+Materios
+   ↓
+evidence
+   ↓
+verification
+   ↓
+canonical state
+   ↓
+Beacon
+ARTICOLO 51 — FAIL-CLOSED
+Quando il protocollo non può dimostrare una condizione necessaria:
 
----
+REJECT
+non:
 
-# ARTICOLO 48 — ON-CHAIN / OFF-CHAIN PARITY
+ASSUME TRUE
+Non sono ammessi fallback silenziosi da:
 
-Nessuna funzione economica critica deve avere due interpretazioni differenti.
+verified path
+a:
 
-Devono essere coerenti almeno:
+trusted fallback
+quando il fallback altera il trust model.
 
-```text
+ARTICOLO 52 — REPLAY E CONFLICT PROTECTION
+Devono essere impediti:
+
+replay di reveal;
+
+replay di proof;
+
+replay di beacon;
+
+cross-round substitution;
+
+cross-game substitution;
+
+stale checkpoint;
+
+duplicate canonicalization;
+
+double claim;
+
+conflicting root acceptance.
+
+ARTICOLO 53 — ONE-SHOT CANONICALIZATION
+Un round non può essere finalizzato due volte con root differenti, salvo una procedura di protocol upgrade esplicitamente definita e compatibile con la Costituzione.
+
+Una canonicalizzazione valida è monotona.
+
+ARTICOLO 54 — GOVERNANCE
+La governance può modificare esclusivamente parametri governabili entro limiti costituzionali.
+
+La governance non può:
+
+creare un team/dev share personale;
+
+scegliere vincitori;
+
+assegnare manualmente il Jackpot;
+
+cambiare un payout già cristallizzato;
+
+invalidare ticket esistenti arbitrariamente;
+
+disattivare la protezione delle liability;
+
+trasformare il backend in autorità;
+
+sostituire una proof verificata con una dichiarazione.
+
+La governance controlla parametri.
+
+Non controlla i singoli esiti economici.
+
+ARTICOLO 55 — PARAMETRI COSTITUZIONALI E GOVERNABILI
+Sono costituzionali almeno:
+
+no privileged beneficiary;
+
+on-chain economic enforcement;
+
+liability-first accounting;
+
+deterministic class activation;
+
+deterministic suspension;
+
+fixed payout after crystallisation;
+
+single claim;
+
+ticket transferability;
+
+no forced burn;
+
+Jackpot non-discretionary;
+
+fail-closed security;
+
+proof over authority.
+
+Sono governabili, entro limiti:
+
+Treasury allocation percentages;
+
+safety reserve targets;
+
+activation/suspension thresholds;
+
+class exposure caps;
+
+statistical reserve parameters;
+
+Jackpot funding rate;
+
+Jackpot trigger probability;
+
+supported settlement assets;
+
+oracle configuration;
+
+reward parameters permissionless.
+
+Qualunque parametro governabile deve restare compatibile con gli invarianti costituzionali.
+
+ARTICOLO 56 — COMPATIBILITÀ ECONOMICA
+Una modifica economica non può trasformare:
+
+deterministic rule
+in:
+
+operator discretion
+Non è accettabile introdurre:
+
+class activation manuale;
+
+payout manuale;
+
+Jackpot manuale;
+
+settlement basato su valore dichiarato dal browser;
+
+liability non contabilizzate;
+
+riserve utilizzate due volte;
+
+esposizione non limitata.
+
+ARTICOLO 57 — ON-CHAIN / OFF-CHAIN PARITY
+Le funzioni economiche critiche devono essere coerenti tra:
+
 TypeScript
       ↕
 Plutus
@@ -1260,1063 +1186,424 @@ Datum
 Redeemer
       ↕
 Tests
-```
+In particolare devono coincidere:
 
-Se esiste una discrepanza, il protocollo non deve essere dichiarato pronto.
+prezzi;
 
----
+ladder;
 
-# ARTICOLO 49 — FALLIMENTO SICURO
+payout;
 
-PRE-RICH deve preferire:
+reserve;
 
-```text
-reject
-```
+exposure;
 
-a:
+class activation;
 
-```text
-accept uncertain data
-```
+Jackpot;
 
-Quando una prova richiesta non è disponibile, valida o sufficientemente determinata:
+settlement rounding;
 
-**la transazione deve fallire.**
+expiry.
 
-Un timeout non deve diventare una licenza per accettare dati non verificati.
+Una discrepanza impedisce di dichiarare il protocollo pronto.
 
-Un errore del relayer non deve diventare un'autorità implicita.
+ARTICOLO 58 — DATUM E REDEEMER
+Ogni campo economicamente rilevante del datum deve avere:
 
-Un errore del backend non deve diventare una decisione economica.
+uno scopo;
 
----
+una regola;
 
-# ARTICOLO 50 — REPLAY PROTECTION
+un consumer;
 
-Ogni proof, reveal, beacon, round e claim deve essere vincolato al proprio contesto.
+una validazione;
 
-Devono essere impediti:
+un comportamento definito per ogni stato pertinente.
 
-* replay di reveal;
-* replay di proof;
-* replay di beacon;
-* cross-round substitution;
-* cross-game substitution;
-* stale checkpoint;
-* duplicate canonicalization;
-* double claim.
+Il redeemer non deve consentire all'utente di dichiarare una proprietà che il validator può derivare o verificare.
 
----
+ARTICOLO 59 — TEST COSTITUZIONALI
+Gli invarianti costituzionali devono essere coperti da test.
 
-# ARTICOLO 51 — ONE-SHOT CANONICALIZATION
+Devono essere testati, ove pertinenti:
 
-Un round non deve poter essere finalizzato due volte con root differenti.
+ticket binding;
 
-La transizione canonica deve essere monotona:
+commit-reveal;
 
-```text
-Pending
-   ↓
-Ready / Canonical
-```
+domain separation;
 
-e non:
+randomness;
 
-```text
-Canonical A
-   ↓
-Canonical B
-```
+symbol generation;
 
-salvo una procedura di protocol upgrade esplicitamente definita dalla governance e compatibile con questa Costituzione.
+tier;
 
----
+payout;
 
-# ARTICOLO 52 — CONFLICTING ROOTS
+max normal payout;
 
-Se esistono due root concorrenti per lo stesso checkpoint, il protocollo non deve scegliere arbitrariamente il primo pubblicato.
+class availability;
 
-Il primo publisher non costituisce prova di canonicalità.
+class suspension;
 
-La regola fondamentale è:
+hysteresis;
 
-> **Uniqueness is necessary, but uniqueness alone is not sufficient.**
+unresolved reserve;
 
-B3 richiede una proprietà indipendente di canonicalità.
+deterministic exposure;
 
----
+effectivePool;
 
-# ARTICOLO 53 — GOVERNANCE
+Jackpot threshold;
 
-La governance può modificare parametri operativi ed economici entro limiti costituzionali.
+Jackpot funding;
 
-La governance non può trasformare PRE-RICH in un protocollo che violi i suoi principi fondamentali.
+Jackpot winner selection;
 
-In particolare non può introdurre:
+crystallisation;
 
-* team/dev treasury share;
-* custodia centralizzata dei fondi;
-* risultato deciso da amministratore;
-* jackpot assegnato manualmente;
-* payout modificabile arbitrariamente dopo il reveal;
-* doppio claim;
-* dipendenza obbligatoria da backend fiduciario;
-* canonicalità determinata da un singolo publisher quando B3 è richiesto;
-* violazione deliberata dell'opacità pre-reveal.
+claim;
 
----
+double claim;
 
-# ARTICOLO 54 — PARAMETRI GOVERNABILI E PARAMETRI COSTITUZIONALI
+transfer;
 
-Devono essere separati:
+burn;
 
-### Parametri costituzionali
+expiry;
 
-Principi non modificabili senza una modifica costituzionale esplicita.
+historical reveal;
 
-Esempi:
+settlement;
 
-* trustlessness;
-* on-chain economic enforcement;
-* no discretionary team share;
-* no trusted backend;
-* commit-reveal fairness;
-* single claim;
-* proof over authority;
-* fail-closed security;
-* publisher-independent canonicality come target B3.
+oracle rejection;
 
-### Parametri governabili
+beacon binding;
 
-Esempi:
+replay;
 
-* percentuali Treasury;
-* threshold;
-* reward relayer;
-* configurazioni operative;
-* prize table entro i limiti consentiti;
-* tempi e parametri economici compatibili con gli invarianti.
+proof rejection.
 
----
+Un requisito non testabile deve essere trattato come rischio.
 
-# ARTICOLO 55 — OPEN SOURCE E VERIFICABILITÀ
+ARTICOLO 60 — ADVERSARIAL MODEL
+Il protocollo deve essere progettato assumendo che:
 
-Il protocollo deve essere pubblicamente verificabile.
+browser sia malevolo;
 
-Devono essere pubblici, quando pertinenti:
+backend sia compromesso;
 
-* smart contracts;
-* specifiche;
-* test;
-* golden vectors;
-* proof formats;
-* protocol parameters;
-* deployment artifacts;
-* documentazione dei trust assumptions;
-* risultati dei PoC.
+relayer sia malevolo;
 
-La documentazione non deve nascondere le limitazioni dell'implementazione corrente.
+adapter sia malevolo;
 
----
+publisher invii dati falsi;
 
-# ARTICOLO 56 — POС COME PROCESSO DI VERIFICA
+utente modifichi campi non vincolati;
 
-I PoC non sono semplici demo.
+proof venga riproposta;
 
-Ogni PoC deve rispondere a una domanda di sicurezza precisa.
+reveal venga riproposto;
 
-Il percorso B3 può essere articolato in fasi quali:
+checkpoint siano conflittuali;
 
-```text
-PoC-0
-Materios evidence extraction
+oracle sia stale;
 
-        ↓
-
-PoC-1
-GRANDPA finality verification
-
-        ↓
-
-PoC-2
-State/storage proof
-
-        ↓
-
-PoC-3
-Complete canonicality proof
-
-        ↓
-
-PoC-4
-Succinct proof / Cardano verification
-
-        ↓
-
-B3
-Canonical external state enforced by Cardano
-```
-
-Ogni fase deve avere criteri di PASS/FAIL espliciti.
-
----
-
-# ARTICOLO 57 — PROOF-CARRYING CHECKPOINT
-
-L'architettura futura può utilizzare un checkpoint accompagnato da prove verificabili.
-
-Il checkpoint deve poter contenere o riferire:
-
-* chain identity;
-* genesis identity;
-* block number;
-* block hash;
-* state root;
-* consensus authority state;
-* finality evidence;
-* application state evidence;
-* protocol version.
-
-Il checkpoint non diventa canonico perché è stato prodotto.
-
-Diventa canonico solo quando il proof system previsto dal protocollo lo dimostra.
-
----
-
-# ARTICOLO 58 — PROOF GENERATOR
-
-Il proof generator può essere completamente off-chain.
-
-Può:
-
-* interrogare RPC;
-* scaricare header;
-* verificare finality;
-* processare authority sets;
-* decodificare SCALE;
-* costruire storage proofs;
-* costruire succinct proofs.
-
-Il proof generator non è trusted.
-
-La sua unica autorità è produrre una prova che deve essere verificata.
-
-Un proof generator corrotto deve poter produrre solo:
-
-```text
-proof accepted
-```
-
-quando la prova è effettivamente valida.
-
-In caso contrario:
-
-```text
-proof rejected
-```
-
----
-
-# ARTICOLO 59 — CARDANO COME VERIFIER FINALE
-
-Il target architetturale è che la verifica necessaria per la decisione economica possa essere effettuata sul livello Cardano secondo un verifier verificabile.
-
-Quando una prova succinta è necessaria per rispettare i limiti computazionali, la succintezza non deve ridurre la proprietà verificata.
-
-La complessità può essere spostata off-chain.
-
-La fiducia non può essere spostata off-chain.
-
----
-
-# ARTICOLO 60 — PRINCIPIO DI MINIMA FIDUCIA
-
-Ogni componente deve essere classificato secondo il trust assumption che introduce.
-
-Categorie minime:
-
-```text
-Trusted
-Semi-trusted
-Untrusted
-Cryptographically verified
-On-chain enforced
-```
-
-Nessun documento può chiamare "trustless" un percorso che contiene ancora una dipendenza fiduciaria non dichiarata.
-
-Il trust model deve essere esplicito.
-
----
-
-# ARTICOLO 61 — B1, B2 E B3 DEVONO ESSERE DICHIARATI
-
-Ogni implementazione del Beacon deve dichiarare chiaramente il proprio livello.
-
-### B1
-
-Publisher/relayer trusted per la pubblicazione.
-
-### B2
-
-Committee trusted per l'attestazione.
-
-### B3
-
-Canonicality verificata indipendentemente dal publisher.
-
-Non è consentito chiamare B1 "B3-ready" senza indicare quali proprietà B3 mancano.
-
----
-
-# ARTICOLO 62 — TEST COME PARTE DELLA COSTITUZIONE
-
-Gli invarianti fondamentali devono avere test.
-
-Devono essere testati, quando applicabili:
-
-* commitment;
-* reveal;
-* domain separation;
-* randomness;
-* symbol generation;
-* tier classification;
-* payout;
-* floor;
-* expiry;
-* historical reveal;
-* claim;
-* double claim;
-* transfer;
-* pre-reveal opacity;
-* beacon binding;
-* checkpoint binding;
-* GRANDPA signatures;
-* authority membership;
-* authority weight;
-* quorum;
-* ancestry;
-* storage inclusion;
-* proof rejection;
-* conflicting roots;
-* replay;
-* stale proofs.
-
-Un requisito non testabile deve essere trattato come rischio architetturale.
-
----
-
-# ARTICOLO 63 — ADVERSARIAL TESTING
-
-Il protocollo deve essere testato assumendo che:
-
-* il browser sia malevolo;
-* il backend sia compromesso;
-* il relayer sia malevolo;
-* l'adapter sia malevolo;
-* il publisher invii dati falsi;
-* un utente modifichi ogni campo non vincolato;
-* vengano riproposti proof/reveal già utilizzati;
-* vengano forniti checkpoint differenti;
-* venga fornito un authority set falso;
-* vengano manipolati weight;
-* vengano fornite firme invalide;
-* vengano presentati signer duplicati;
-* venga presentato un root concorrente;
-* venga presentato uno stato stale.
+authority set sia falso.
 
 Il sistema deve fallire chiudendo il percorso.
 
----
+ARTICOLO 61 — OPEN SOURCE E TRASPARENZA
+Devono essere pubblici, quando pertinenti:
 
-# ARTICOLO 64 — DIVIETO DI TRUST BY CONVENIENCE
+smart contracts;
 
-Non è accettabile introdurre un componente trusted semplicemente perché:
+specifiche;
 
-* è più facile da implementare;
-* riduce il costo di una transazione;
-* rende la UX più semplice;
-* evita di implementare una proof;
-* rende il PoC più veloce.
+test;
 
-Una semplificazione può essere utilizzata durante un PoC solo se il trust assumption viene esplicitamente dichiarato e non viene confuso con la sicurezza definitiva.
+golden vectors;
 
----
+proof formats;
 
-# ARTICOLO 65 — COMPATIBILITÀ
+protocol parameters;
 
-Le evoluzioni del protocollo devono preservare le proprietà già dimostrate.
+deployment artifacts;
 
-Una nuova implementazione non deve eliminare:
+trust assumptions;
 
-* domain separation;
-* ticket binding;
-* commit-reveal;
-* deterministic derivation;
-* single claim;
-* NFT preservation;
-* fail-closed behavior;
+risultati dei PoC.
 
-solo per semplificare una nuova feature.
+Le limitazioni della versione corrente devono essere dichiarate.
 
-Le modifiche devono essere valutate rispetto agli invarianti esistenti.
+ARTICOLO 62 — PRINCIPIO DI NON REGRESSIONE
+Una nuova feature non può richiedere:
 
----
-
-# ARTICOLO 66 — NO SILENT FALLBACK
-
-Un componente non deve passare automaticamente da:
-
-```text
-verified path
-```
-
-a:
-
-```text
-trusted fallback
-```
-
-senza che il trust model lo preveda esplicitamente.
-
-In particolare non è ammesso:
-
-```text
-proof verification failed
-        ↓
-use relayer value instead
-```
-
-né:
-
-```text
-oracle unavailable
-        ↓
-use browser value
-```
-
-né:
-
-```text
-canonical proof unavailable
-        ↓
-use first submitted root
-```
-
----
-
-# ARTICOLO 67 — STORIA DEL TICKET
-
-Il protocollo deve poter conservare la storia verificabile del ticket.
-
-La storia può comprendere:
-
-* emissione;
-* trasferimenti;
-* reveal;
-* win/loss;
-* payout;
-* claim;
-* expiry;
-* burn volontario.
-
-La storia non deve essere alterabile retroattivamente attraverso dati off-chain.
-
----
-
-# ARTICOLO 68 — PRIVACY E MINIMA ESPOSIZIONE
-
-PRE-RICH non deve pubblicare prima del reveal dati non necessari che consentano di ridurre l'entropia del risultato.
-
-Quando un'informazione non è necessaria on-chain prima del reveal, deve essere considerata candidata alla protezione tramite commitment o altro meccanismo appropriato.
-
-La trasparenza del protocollo non significa esposizione anticipata del risultato.
-
----
-
-# ARTICOLO 69 — ECONOMIC SAFETY
-
-Il protocollo non deve creare liability non contabilizzate.
-
-Ogni payout cristallizzato deve essere trattato come obbligazione economica.
-
-La gestione del PrizePool deve evolvere verso un modello nel quale la liquidità effettivamente spendibile sia distinta dalle obbligazioni già esistenti.
-
-Una transazione che violi la solvibilità deve essere rifiutata.
-
----
-
-# ARTICOLO 70 — AUTOMAZIONE
-
-PRE-RICH deve essere progettato per funzionare automaticamente.
-
-Le operazioni ricorrenti non devono richiedere un amministratore.
-
-L'automazione può essere eseguita da:
-
-* relayer;
-* keeper;
-* bot;
-* servizi esterni.
-
-Ma tali componenti devono essere sostituibili.
-
-La perdita di un singolo relayer non deve bloccare permanentemente il diritto economico degli utenti quando l'operazione può essere resa permissionless.
-
----
-
-# ARTICOLO 71 — SOSTITUIBILITÀ DEGLI OPERATORI
-
-Un relayer è un ruolo, non un'identità privilegiata permanente.
-
-Un futuro design B3 dovrebbe consentire che più soggetti possano:
-
-* produrre prove;
-* trasmettere prove;
-* facilitare transazioni.
-
-La correttezza deve derivare dalla prova, non dall'identità dell'operatore.
-
----
-
-# ARTICOLO 72 — NESSUN SINGLE POINT OF TRUST
-
-Il protocollo deve progressivamente eliminare:
-
-* single publisher;
-* single relayer;
-* single backend;
-* single oracle operator;
-* single proof generator.
-
-Quando un single point non può essere ancora eliminato, deve essere dichiarato nel trust model e classificato come limite della versione corrente.
-
----
-
-# ARTICOLO 73 — DEFINIZIONE DI "TRUSTLESS"
-
-Per PRE-RICH, "trustless" non significa che nessun soggetto esterno esista.
-
-Significa:
-
-> **nessun soggetto esterno deve essere creduto sulla parola quando la sua affermazione può essere sostituita da una prova verificabile.**
-
-Un soggetto può produrre dati.
-
-Un soggetto può produrre prove.
-
-Un soggetto può pagare il costo della transazione.
-
-Ma la verità economica deve essere determinata dalle regole verificabili del protocollo.
-
----
-
-# ARTICOLO 74 — REGOLA SUPREMA SULLA CANONICALITÀ
-
-La frase fondamentale del modello B3 è:
-
-> **The publisher may submit evidence. The publisher must not choose truth.**
-
-Corollario:
-
-> **The adapter may observe and prove. The adapter must not decide.**
-
-Corollario finale:
-
-> **Only verifiable canonical state may influence the canonical Beacon.**
-
----
-
-# ARTICOLO 75 — REGOLA SUPREMA SULLA FAIRNESS
-
-La frase fondamentale della fairness è:
-
-> **Nessuna informazione pubblicamente disponibile prima del reveal deve consentire di determinare o dedurre significativamente il risultato del ticket.**
-
-La proprietà deve essere dimostrata mediante test e analisi avversariali.
-
----
-
-# ARTICOLO 76 — REGOLA SUPREMA SULL'ECONOMIA
-
-La frase fondamentale dell'economia è:
-
-> **No trusted operator may have discretionary authority over user funds or user winnings.**
-
-Il protocollo deve determinare automaticamente:
-
-* raccolta;
-* allocazione;
-* payout;
-* claim;
-* expiry;
-* distribuzione.
-
----
-
-# ARTICOLO 77 — REGOLA SUPREMA SULLA SICUREZZA
-
-Quando il protocollo non riesce a dimostrare una condizione necessaria:
-
-```text
-REJECT
-```
-
-non:
-
-```text
-ASSUME TRUE
-```
-
-La sicurezza prevale sulla disponibilità.
-
----
-
-# ARTICOLO 78 — CRITERI DI PRODUZIONE
-
-PRE-RICH non può essere dichiarato production-ready finché non sono soddisfatti, secondo la versione del protocollo:
-
-1. compilazione completa;
-2. test completi;
-3. golden vectors;
-4. parity Plutus/TypeScript;
-5. assenza di secret/API key nel frontend;
-6. verifica dei validator;
-7. verifica dei datum;
-8. verifica delle policy;
-9. verifica del Treasury;
-10. verifica del claim;
-11. verifica del double-claim protection;
-12. verifica della fairness;
-13. verifica del Beacon;
-14. verifica del trust model;
-15. verifica dei proof paths;
-16. verifica dei failure paths;
-17. revisione adversarial;
-18. coerenza documentale.
-
-Nessun singolo PoC sostituisce questo processo.
-
----
-
-# ARTICOLO 79 — CRITERI B3
-
-PRE-RICH può dichiarare B3 solo quando sono dimostrati tutti gli elementi necessari del percorso definitivo, inclusi almeno:
-
-1. checkpoint deterministico;
-2. binding round/checkpoint;
-3. finality verificata;
-4. authority state corretto;
-5. gestione delle authority transitions quando necessaria;
-6. ancestry verificata quando richiesta;
-7. state/storage proof verificata;
-8. binding del proof alla state root;
-9. binding alla chiave deterministica;
-10. proof verificabile;
-11. publisher independence;
-12. conflicting-root rejection;
-13. replay protection;
-14. stale-proof rejection;
-15. one-shot canonicalization;
-16. derivazione Beacon esclusivamente dallo stato canonico;
-17. enforcement economico sul livello Cardano;
-18. test avversariali del percorso completo.
-
-Finché questi requisiti non sono soddisfatti:
-
-> **PRE-RICH non deve dichiararsi B3.**
-
----
-
-# ARTICOLO 80 — EVOLUZIONE VERSO B3
-
-L'evoluzione del protocollo deve seguire il principio:
-
-```text
-B1
- ↓
-verified evidence
- ↓
-B2-capable evidence
- ↓
-cryptographic finality
- ↓
-state proof
- ↓
-succinct proof
- ↓
-Cardano verification
- ↓
-B3
-```
-
-Ogni fase deve ridurre il trust assumption.
-
-Nessuna fase deve essere descritta come trustless se introduce una nuova autorità senza dichiararla.
-
----
-
-# ARTICOLO 81 — PRINCIPIO DI NON REGRESSIONE
-
-Una modifica tecnica non può essere accettata se:
-
-```text
-new feature
-```
-
-richiede:
-
-```text
 weakened invariant
-```
-
-senza una modifica costituzionale esplicita.
+come prezzo per essere implementata.
 
 In particolare non è accettabile sacrificare:
 
-* trustlessness;
-* fairness;
-* on-chain enforcement;
-* automaticity;
-* security;
+trustlessness;
 
-per ottenere una UX più semplice.
+fairness;
 
----
+automaticity;
 
-# ARTICOLO 82 — GERARCHIA DELLA DOCUMENTAZIONE
+on-chain enforcement;
 
-La gerarchia normativa è:
+solvency;
 
-```text
-CONSTITUTION
-      ↓
-SPECIFICATIONS
-      ↓
-IMPLEMENTATION
-      ↓
-TESTS / PROOFS
-```
+security;
 
-La Costituzione stabilisce **cosa deve essere vero**.
+per una UX più semplice.
 
-Le specifiche stabiliscono **come deve essere ottenuto**.
+ARTICOLO 63 — REGOLA SUPREMA SULL'ECONOMIA
+No trusted operator may have discretionary authority over user funds, user winnings, ticket-class activation or Jackpot assignment.
 
-Il codice implementa.
+L'economia del protocollo deve essere determinata da:
 
-I test e le prove dimostrano.
-
-Una specifica non può autorizzare una violazione della Costituzione.
-
----
-
-# ARTICOLO 83 — REPOSITORY CONSISTENCY
-
-Ogni modifica a un invariant fondamentale deve essere verificata contro tutti i componenti interdipendenti:
-
-* `docs/`;
-* `poc/`;
-* `plutus/`;
-* `src/`;
-* `relayer/`;
-* `scripts/`;
-* test;
-* compiled artifacts.
-
-Non è consentito aggiornare un singolo documento lasciando il resto del repository in contraddizione.
-
----
-
-# ARTICOLO 84 — REGOLA PER I DATUM
-
-Non devono essere introdotti campi nel datum semplicemente perché sono convenienti per il frontend.
-
-Ogni campo economicamente rilevante deve avere:
-
-* una ragione;
-* un'invariante;
-* un consumer;
-* una regola di validazione;
-* un comportamento definito in ogni stato.
-
-I dati non necessari non devono diventare nuove superfici di attacco.
-
----
-
-# ARTICOLO 85 — REGOLA PER I REDEEMER
-
-Un redeemer non deve essere utilizzato per permettere all'utente di dichiarare una proprietà che il validator può calcolare o verificare.
-
-Esempio non valido:
-
-```text
-Reveal {
-    symbols = userProvidedSymbols
-}
-```
-
-quando il validator può derivare i simboli.
-
-Il redeemer deve fornire solo l'informazione necessaria all'azione.
-
----
-
-# ARTICOLO 86 — REGOLA PER LE RECEIPT ESTERNE
-
-Una receipt esterna può attestare che un sistema esterno ha osservato qualcosa.
-
-Non può trasformare automaticamente quell'osservazione in verità economica.
-
-La catena deve verificare almeno:
-
-```text
-identity
+verified state
 +
-binding
+deterministic rules
 +
-proof
-+
-canonical context
-```
+on-chain enforcement
+e non da:
 
-prima di attribuire significato economico al dato.
+operator decision
+ARTICOLO 64 — REGOLA SUPREMA SUL JACKPOT
+Il Jackpot deve essere:
 
----
+economicamente separato;
 
-# ARTICOLO 87 — REGOLA PER IL FRONTEND
+molto superiore al massimo payout normale;
 
-Il frontend è una superficie di presentazione e costruzione di transazioni.
+progressivo a gradini;
 
-Non è una superficie di consenso.
+finanziato solo dopo le priorità obbligatorie;
 
-Il frontend può:
+attivato deterministically;
 
-* mostrare;
-* calcolare una previsione;
-* preparare una transazione;
-* facilitare l'utente.
+assegnato attraverso randomness canonica;
 
-Il frontend non può:
+non discrezionale.
 
-* stabilire il winner;
-* stabilire il payout;
-* stabilire il jackpot;
-* stabilire il Beacon;
-* stabilire la validità del claim.
+La scala di riferimento è:
 
----
+10×
+20×
+50×
+100×
+250×
+del massimo payout normale associato alla HighestClassEverActivated.
 
-# ARTICOLO 88 — TRASPARENZA DEI LIMITI
+ARTICOLO 65 — REGOLA SUPREMA SULLA SOLVIBILITÀ
+Il protocollo deve sempre distinguere:
 
-Ogni componente sperimentale deve dichiarare chiaramente:
+gross liquidity
+da:
 
-* cosa verifica;
-* cosa non verifica;
-* quali dati considera trusted;
-* quali dati considera untrusted;
-* quale trust assumption rimane;
-* quale fase B1/B2/B3 rappresenta.
+economically available liquidity
+Una transazione non deve creare nuove obbligazioni oltre la capacità definita dalle regole di:
 
-La trasparenza sui limiti è parte della sicurezza.
+pending liabilities;
 
----
+unresolved reserve;
 
-# ARTICOLO 89 — PRINCIPIO DI CONSERVAZIONE DELLE PROPRIETÀ
+deterministic exposure caps;
 
-Quando una parte del sistema viene sostituita, le proprietà già garantite devono essere conservate.
+safety floor;
 
-In particolare:
+locked Jackpot;
 
-```text
-old verified invariant
+settlement backing.
+
+Quando una condizione di solvibilità richiesta non è soddisfatta:
+
+REJECT
+o:
+
+SUSPEND NEW SALES
+secondo lo stato previsto dal circuito di sicurezza.
+
+ARTICOLO 66 — CRITERIO DI PRODUCTION READINESS
+PRE-RICH non può essere dichiarato production-ready finché non sono soddisfatti, nella versione applicabile:
+
+compilazione;
+
+test;
+
+golden vectors;
+
+parity Plutus/TypeScript;
+
+validazione dei datum;
+
+validazione dei redeemer;
+
+validazione delle policy;
+
+validazione Treasury;
+
+validazione PrizePool;
+
+validazione claim;
+
+double-claim protection;
+
+fairness;
+
+randomness;
+
+solvency;
+
+class activation/suspension;
+
+Jackpot;
+
+oracle settlement;
+
+trust model;
+
+failure paths;
+
+revisione adversarial;
+
+coerenza documentale.
+
+ARTICOLO 67 — CRITERI B3
+PRE-RICH può dichiararsi B3 solo quando sono dimostrati almeno:
+
+checkpoint deterministico;
+
+binding round/checkpoint;
+
+finality verificata;
+
+authority state corretto;
+
+gestione delle authority transitions quando necessaria;
+
+ancestry quando richiesta;
+
+storage/state proof;
+
+binding della proof alla state root;
+
+binding alla chiave deterministica;
+
+proof verificabile;
+
+publisher independence;
+
+conflicting-root rejection;
+
+replay protection;
+
+stale-proof rejection;
+
+one-shot canonicalization;
+
+derivazione Beacon dallo stato canonico;
+
+economic enforcement su Cardano;
+
+test avversariali del percorso completo.
+
+Finché questi requisiti non sono soddisfatti:
+
+PRE-RICH non deve dichiararsi B3.
+
+ARTICOLO 68 — REGOLA FINALE DI COERENZA
+Ogni modifica a un invariant fondamentale deve essere verificata contro:
+
+docs/;
+
+plutus/;
+
+src/;
+
+relayer/;
+
+poc/;
+
+scripts/;
+
+tests;
+
+generated artifacts.
+
+Non è consentito aggiornare un singolo file normativo lasciando il resto del repository in contraddizione.
+
+APPENDICE A — RIFERIMENTO ECONOMICO MINIMO
+Il modello economico costituzionale minimo è:
+
+Canonical Unit = USDM
+
+Genesis = 1 USDM
+
+Ticket Classes =
+1 / 2 / 3 / 5 / 10 / 25 / 50 / 100 USDM
+
+Maximum Normal Payout =
+500 × Ticket Price
+
+Effective Pool =
+Total Liquidity
+- Pending Liabilities
+- Unresolved Reserve
+- Locked Jackpot
+
+Current Active Class =
+Highest class whose post-sale state is safe
+
+Highest Class Ever Activated =
+Monotonic historical state
+
+Jackpot Ladder =
+10× / 20× / 50× / 100× / 250×
+of the maximum normal payout associated
+with the highest class ever activated
+
+Safety Response =
+100 → 50 → 25 → 10 → 5 → 3 → 2 → 1 → HALT
+APPENDICE B — PRINCIPIO DI PROGRESSIONE
+PRE-RICH non deve crescere assumendo rischio semplicemente perché il capitale lordo aumenta.
+
+La progressione economica è:
+
+more verified capital
         ↓
-new implementation
-```
+more safe exposure capacity
+        ↓
+higher ticket class
+        ↓
+higher maximum normal payout
+        ↓
+higher Jackpot scale
+Una crescita che non aumenta la capacità economica verificata non deve automaticamente aumentare l'esposizione.
 
-deve produrre:
+APPENDICE C — PRINCIPIO DI CONSERVAZIONE DELLE LIABILITY
+Una volta creata una liability economica valida:
 
-```text
-same invariant
-```
+future liquidity changes
+non devono eliminarla arbitrariamente.
 
-o una proprietà formalmente più forte.
+Una liability cristallizzata può essere ridotta solo attraverso l'adempimento previsto:
 
-Non è sufficiente che la nuova implementazione "funzioni".
+CLAIM
+o attraverso le regole di expiry applicabili prima della cristallizzazione del diritto.
 
----
+APPENDICE D — PRINCIPIO DI FALLIMENTO SICURO
+In ogni conflitto tra:
 
-# ARTICOLO 90 — PRINCIPIO ULTIMO
+availability
+e:
 
-PRE-RICH non deve essere un sistema nel quale:
+economic safety
+PRE-RICH deve privilegiare:
 
-> "ci fidiamo del server perché non dovrebbe barare."
-
-Deve essere un sistema nel quale:
-
-> **il server può anche essere compromesso e il protocollo continua a rifiutare ciò che non può essere dimostrato.**
-
-Non deve essere:
-
-> "ci fidiamo del relayer."
-
-Deve essere:
-
-> **il relayer può essere sostituito senza cambiare la verità del gioco.**
-
-Non deve essere:
-
-> "ci fidiamo del publisher Materios."
-
-Deve essere:
-
-> **la prova della canonicalità deve rendere irrilevante chi ha pubblicato l'evidenza.**
-
-Non deve essere:
-
-> "il frontend calcola il risultato correttamente."
-
-Deve essere:
-
-> **il validator deve poter verificare il risultato indipendentemente dal frontend.**
-
-Non deve essere:
-
-> "il backend sa chi ha vinto."
-
-Deve essere:
-
-> **la blockchain deve sapere perché qualcuno ha vinto.**
-
----
-
-# ARTICOLO 91 — PRINCIPIO FINALE
-
-La proprietà fondamentale di PRE-RICH è:
-
-```text
-TRUSTLESS
-+
-ON-CHAIN
-+
-SECURE
-+
-AUTOMATIC
-```
-
-Questi quattro principi sono inseparabili.
-
-Una soluzione che è automatica ma richiede fiducia non è conforme.
-
-Una soluzione che è on-chain ma permette a un operatore di scegliere il risultato non è conforme.
-
-Una soluzione che è trustless ma non protegge la solvibilità non è conforme.
-
-Una soluzione che è sicura ma richiede un amministratore per funzionare non realizza l'obiettivo del protocollo.
-
-PRE-RICH deve quindi perseguire una forma di automazione nella quale:
-
-```text
-people may operate the infrastructure
-but
-people do not control the truth.
-```
-
----
-
-# ARTICOLO 92 — CLAUSOLA DI IMMUTABILITÀ DEI PRINCIPI
-
-La governance può evolvere il protocollo.
-
-Non può abolire i suoi principi fondamentali.
-
-In particolare non può trasformare PRE-RICH da:
-
-```text
-trustless
-```
-
-a:
-
-```text
-trusted
-```
-
-da:
-
-```text
-on-chain
-```
-
-a:
-
-```text
-custodial/off-chain
-```
-
-da:
-
-```text
-automatic
-```
-
-a:
-
-```text
-administrator-controlled
-```
-
-o da:
-
-```text
-cryptographically verifiable
-```
-
-a:
-
-```text
-authority-based
-```
-
-senza una nuova costituzione che richiederebbe una ridefinizione esplicita dell'identità del protocollo.
-
----
-
-# ARTICOLO 93 — CLAUSOLA DI CHIUSURA
-
-Ogni futura implementazione, modifica, PoC o integrazione deve essere giudicata attraverso una domanda semplice:
-
-> **"Se tutti i soggetti off-chain fossero malevoli, quali proprietà rimarrebbero comunque vere perché la blockchain può verificarle?"**
-
-La risposta deve essere esplicita.
-
-Se la risposta dipende da:
-
-* un team;
-* un founder;
-* un admin;
-* un backend;
-* un relayer;
-* un publisher;
-* un oracle;
-* un adapter;
-
-allora quella proprietà non è ancora pienamente trustless.
-
-Il lavoro del protocollo è trasformare progressivamente tali dipendenze in:
-
-```text
-proof
-```
-
-e infine in:
-
-```text
-on-chain verification
-```
-
----
-
-# PRINCIPIO COSTITUZIONALE FINALE
-
-> **PRE-RICH non deve chiedere agli utenti di fidarsi di chi gestisce il sistema. Deve permettere loro di verificare che il sistema non abbia bisogno della loro fiducia.**
+economic safety
+La mancata disponibilità di una funzione non autorizza il protocollo a inventare una verità.
