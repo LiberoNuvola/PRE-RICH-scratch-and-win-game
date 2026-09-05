@@ -18,6 +18,10 @@ module Types
   , B1PrizePoolAction (..)
   , TreasuryDatum (..)
   , TreasuryAction (..)
+  , OracleDatum (..)
+  , precision
+  , minUtxoLovelace
+  , maxOracleAge
   ) where
 
 import PlutusLedgerApi.V2
@@ -100,6 +104,49 @@ data BeaconRegistryAction
 PlutusTx.unstableMakeIsData ''BeaconRegistryAction
 
 
+-- | Precision for integer arithmetic. Oracle prices are scaled by this factor.
+-- 1_000_000 ensures sufficient precision for sub-unit calculations.
+{-# INLINABLE precision #-}
+precision :: Integer
+precision = 1000000
+
+-- | Minimum UTxO ADA (1.6 ADA = 1_600_000 lovelace).
+-- This ADA is NOT economic liquidity; it is a protocol requirement.
+{-# INLINABLE minUtxoLovelace #-}
+minUtxoLovelace :: Integer
+minUtxoLovelace = 1600000
+
+-- | Maximum oracle age in milliseconds (1 hour).
+{-# INLINABLE maxOracleAge #-}
+maxOracleAge :: Integer
+maxOracleAge = 3600000
+
+
+-- | Oracle price datum.
+--
+-- Published by an authorized publisher. Contains the price of an asset
+-- in USDM sub-units, scaled by PRECISION (1_000_000).
+--
+-- The B1PrizePool validator reads this from a reference input and uses it
+-- to compute the USDM-denominated value of assets in the PrizePool UTxO.
+data OracleDatum = OracleDatum
+  { odAssetPolicy :: BuiltinByteString
+  -- ^ CurrencySymbol of the asset (raw bytes).
+  , odAssetName   :: BuiltinByteString
+  -- ^ TokenName of the asset (raw bytes).
+  , odPrice       :: Integer
+  -- ^ Price of 1 unit of asset in USDM sub-units, scaled by PRECISION.
+  --   For ADA: price of 1 lovelace in USDM sub-units * PRECISION.
+  --   For USDM: PRECISION (identity: 1 USDM sub-unit = 1 USDM sub-unit).
+  , odTimestamp   :: Integer
+  -- ^ POSIX time (ms) when the price was published.
+  , odPublisher   :: PubKeyHash
+  -- ^ Public key hash of the authorized publisher.
+  }
+
+PlutusTx.unstableMakeIsData ''OracleDatum
+
+
 -- | Prize / ticket economic datum.
 --
 -- Pre-reveal (Pending): result/tier/amount MUST be empty or zero and MUST NOT
@@ -158,6 +205,12 @@ PlutusTx.unstableMakeIsData ''PrizeAction
 --
 -- JackpotActive is derived: effectivePool >= jackpotThreshold.
 --
+-- Accounting unit: ALL monetary fields are in USDM sub-units (1 USDM = 100).
+-- The actual PrizePool UTxO may contain USDM tokens plus ADA required for
+-- Cardano min-UTxO / fees, but ADA must not be confused with the USDM
+-- economic accounting balance. The datum identifies the accounting asset
+-- unambiguously as USDM sub-units.
+--
 -- unresolvedTicketCount must equal the number of tickets currently in
 -- Pending/BeaconReady state (unrevealed). It is NOT derivable from
 -- unresolvedReserve alone because reservePerTicket varies by class.
@@ -165,19 +218,22 @@ PlutusTx.unstableMakeIsData ''PrizeAction
 -- This datum lives on a single global PrizePool UTxO.
 data B1PrizePoolDatum = B1PrizePoolDatum
   { ppTotalLiquidity     :: Integer
-  -- ^ Total ADA held by the PrizePool (lovelace).
-  --   MUST equal the actual lovelace in the PrizePool UTxO.
+  -- ^ Total USDM-denominated liquidity held by the PrizePool.
+  --   MUST represent the actual USDM value (not ADA lovelace).
+  --   The UTxO may contain ADA for min-UTxO but this field tracks USDM.
   , ppPendingLiabilities :: Integer
-  -- ^ Sum of crystallised, unclaimed winning payouts (lovelace).
+  -- ^ Sum of crystallised, unclaimed winning payouts in USDM sub-units.
   , ppUnresolvedReserve  :: Integer
-  -- ^ Reserve for unrevealed tickets: count * reservePerTicket.
+  -- ^ Reserve for unrevealed tickets in USDM sub-units.
+  --   Computed deterministically from ticket pdPriceUsdm values.
   , ppUnresolvedTicketCount :: Integer
   -- ^ Number of currently unrevealed tickets (in Pending/BeaconReady).
   --   Must be >= 0 and consistent with unresolvedReserve.
   , ppLockedJackpot      :: Integer
-  -- ^ Liquidity locked for jackpot (subtracted only when separately reserved).
+  -- ^ Liquidity locked for jackpot in USDM sub-units (subtracted only
+  --   when separately reserved). Not double-counted with liabilities.
   , ppJackpotThreshold   :: Integer
-  -- ^ Effective pool level above which jackpot is active.
+  -- ^ Effective pool level (USDM sub-units) above which jackpot is active.
   , ppSuspendedClasses   :: Integer
   -- ^ Bitmask of suspended ticket classes.
   --   Bit 0 = Genesis (1 USDM), bit 1 = Class 1 (2 USDM), ..., bit 7 = 100 USDM.
@@ -198,28 +254,37 @@ PlutusTx.unstableMakeIsData ''B1PrizePoolDatum
 -- This prevents the datum from declaring an amount that doesn't match
 -- the actual transfer.
 --
--- TicketIssued: reservePerTicket is provided and must be > 0.
+-- TicketIssued: redeemer provides pdPriceUsdm. B1PrizePool computes
+-- the reserve deterministically from pdPriceUsdm using the protocol's
+-- canonical reserve rule. The redeemer-supplied priceUsdm must match
+-- the pdPriceUsdm in the PrizeDatum output.
 --
--- TicketRevealed: reserveRelease per ticket, payout from crystallised
--- PrizeDatum (must be >= 0; 0 for losses).
+-- TicketRevealed: redeemer provides pdPriceUsdm. B1PrizePool verifies
+-- the payout matches the PrizeDatum's pdPrizeAmount and computes
+-- reserveRelease deterministically from pdPriceUsdm.
 --
 -- TicketClaimed: claimedAmount must match the crystallised payout.
 -- Cannot claim more than once because status transitions to Claimed.
 --
--- TicketExpired: reserveRelease per ticket, must be > 0 for unrevealed
--- tickets that have passed expiry.
+-- TicketExpired: B1PrizePool computes reserveRelease deterministically
+-- from the consumed PrizeDatum's pdPriceUsdm. NOT an average across
+-- unresolved tickets.
 data B1PrizePoolAction
   = FundTreasury
   -- ^ Treasury deposits funds. Actual value increase verified on-chain.
   | TicketIssued Integer
-  -- ^ New ticket minted. reservePerTicket > 0. Increases count and reserve.
-  | TicketRevealed Integer Integer
-  -- ^ Ticket revealed. reserveRelease >= 0, payout >= 0.
+  -- ^ New ticket minted. Integer = pdPriceUsdm from the PrizeDatum.
+  --   Reserve is computed deterministically: reserve = pdPriceUsdm.
+  | TicketRevealed Integer
+  -- ^ Ticket revealed. Integer = pdPriceUsdm from the consumed PrizeDatum.
+  --   payout is verified against PrizeDatum; reserveRelease is computed
+  --   deterministically from pdPriceUsdm.
   | TicketClaimed Integer
   -- ^ Ticket claimed. claimedAmount > 0, matches crystallised payout.
   | TicketExpired
-  -- ^ Ticket expired unrevealed. Decreases count and reserve by
-  --   reservePerTicket derived from the ticket's priceUsdm.
+  -- ^ Ticket expired unrevealed. Decreases count and reserve by the
+  --   deterministic reserve derived from the ticket's pdPriceUsdm.
+  --   NOT an average across unresolved tickets.
 
 PlutusTx.unstableMakeIsData ''B1PrizePoolAction
 

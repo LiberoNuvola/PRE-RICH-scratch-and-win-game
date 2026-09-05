@@ -16,7 +16,7 @@ import {
   counterValidator,
 } from './loadValidator'
 
-import { RELAYER_PKH } from './config'
+import { RELAYER_PKH, ORACLE_PUBLISHER_PKH } from './config'
 
 import {
   type BeaconTarget,
@@ -215,7 +215,7 @@ export async function mintSerialNFT(
   const prizeFunding = opts.prizeFundingLovelace ?? MIN_ADA_PRIZE
   const prizeAmount = opts.prizeAmount ?? prizeFunding
 
-  const scripts = buildScriptsFromLucid(lucid, table)
+  const scripts = buildScriptsFromLucid(lucid, table, ORACLE_PUBLISHER_PKH)
 
   const {
     mintPolicy,

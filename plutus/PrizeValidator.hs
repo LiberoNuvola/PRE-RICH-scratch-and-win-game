@@ -13,7 +13,8 @@ module PrizeValidator
 import PlutusLedgerApi.V2
 import PlutusLedgerApi.V2.Contexts
 import PlutusTx
-import PlutusTx.Prelude hiding (Semigroup (..), unless)
+import PlutusTx.Prelude hiding (unless)
+import qualified PlutusTx.AssocMap as AssocMap
 
 import Beacon
   ( playerCommitment
@@ -41,6 +42,10 @@ import Types
   , BeaconTarget (..)
   , BeaconRegistryDatum (..)
   , B1PrizePoolDatum (..)
+  , OracleDatum (..)
+  , precision
+  , minUtxoLovelace
+  , maxOracleAge
   )
 
 -- ============================================================
@@ -125,6 +130,15 @@ sumToAddress addr pick (o:os) =
   if txOutAddress o == addr
     then pick (txOutValue o) + sumToAddress addr pick os
     else sumToAddress addr pick os
+
+-- | Sum Value of all outputs to a specific address.
+{-# INLINABLE sumValuesToAddress #-}
+sumValuesToAddress :: Address -> [TxOut] -> Value
+sumValuesToAddress _ [] = mempty
+sumValuesToAddress addr (o:os) =
+  if txOutAddress o == addr
+    then txOutValue o <> sumValuesToAddress addr os
+    else sumValuesToAddress addr os
 
 {-# INLINABLE continuingScriptOuts #-}
 continuingScriptOuts :: ScriptHash -> [TxOut] -> [TxOut]
@@ -249,6 +263,19 @@ readPoolInput info poolHashB = go (txInfoInputs info)
                 Nothing -> go is
         _ -> go is
 
+-- | Count B1PrizePool inputs in the transaction.
+{-# INLINABLE countPoolInputs #-}
+countPoolInputs :: TxInfo -> BuiltinByteString -> Integer
+countPoolInputs info poolHashB = go (txInfoInputs info)
+  where
+    poolHash = ScriptHash poolHashB
+    go [] = 0
+    go (i:is) =
+      case addressCredential (txOutAddress (txInInfoResolved i)) of
+        ScriptCredential h
+          | h == poolHash -> 1 + go is
+        _ -> go is
+
 -- | Claim allowed only if tx validity range ends at or before expiresAt.
 -- Uses POSIX time from txInfoValidRange (ms-compatible Integer compare).
 {-# INLINABLE claimBeforeExpiry #-}
@@ -276,6 +303,76 @@ identityFieldsEq a b =
   && pdPrizePoolHash a == pdPrizePoolHash b
   && pdIssuedAt a == pdIssuedAt b
   && pdExpiresAt a == pdExpiresAt b
+
+-- ============================================================
+-- Oracle helpers (C-03)
+-- ============================================================
+
+-- ============================================================
+-- Oracle helpers (C-03) — precomputed flat list
+-- ============================================================
+
+{-# OPAQUE decodeOracleDatum #-}
+decodeOracleDatum :: TxInfo -> TxOut -> Maybe OracleDatum
+decodeOracleDatum info out =
+  case txOutDatum out of
+    OutputDatum d -> fromBuiltinData (getDatum d)
+    OutputDatumHash dh ->
+      case findDatum dh info of
+        Just d  -> fromBuiltinData (getDatum d)
+        Nothing -> Nothing
+    NoOutputDatum -> Nothing
+
+{-# OPAQUE validOracleTimestamp #-}
+validOracleTimestamp :: Integer -> TxInfo -> Bool
+validOracleTimestamp timestamp info =
+  case ivTo (txInfoValidRange info) of
+    UpperBound (Finite t) _ ->
+      let now = getPOSIXTime t
+      in now - timestamp <= maxOracleAge && timestamp <= now
+    _ -> False
+
+-- ============================================================
+-- USDM value computation (C-03)
+-- ============================================================
+
+{-# OPAQUE ceilingDiv #-}
+ceilingDiv :: Integer -> Integer -> Integer
+ceilingDiv a b
+  | b == 0    = traceError "Prize: division by zero"
+  | a <= 0    = 0
+  | b < 0     = traceError "Prize: invalid divisor"
+  | otherwise = (a + b - 1) `divide` b
+
+{-# OPAQUE oraclePriceFor #-}
+oraclePriceFor :: [TxInInfo] -> PubKeyHash -> TxInfo -> BuiltinByteString -> BuiltinByteString -> Integer
+oraclePriceFor [] _ _ _ _ = traceError "Prize: oracle missing"
+oraclePriceFor (i:is) publisher info csBytes tnBytes =
+  case decodeOracleDatum info (txInInfoResolved i) of
+    Just od
+      | odAssetPolicy od == csBytes
+      && odAssetName od == tnBytes
+      && odPublisher od == publisher
+      && validOracleTimestamp (odTimestamp od) info -> odPrice od
+    _ -> oraclePriceFor is publisher info csBytes tnBytes
+
+{-# INLINABLE totalUsdmValue #-}
+totalUsdmValue :: TxInfo -> PubKeyHash -> Value -> Integer
+totalUsdmValue info publisher val =
+  let refs = txInfoReferenceInputs info
+  in go refs (AssocMap.toList (getValue val))
+  where
+    go _ [] = 0
+    go refs ((cs, innerMap):rest) =
+      goInner refs (unCurrencySymbol cs) (AssocMap.toList innerMap) + go refs rest
+    goInner _ _ [] = 0
+    goInner refs csBytes ((tn, amt):rest) =
+      let price = oraclePriceFor refs publisher info csBytes (unTokenName tn)
+          economicAmt
+            | csBytes == unCurrencySymbol adaSymbol
+              && unTokenName tn == unTokenName adaToken = max 0 (amt - minUtxoLovelace)
+            | otherwise = amt
+      in ceilingDiv (economicAmt * price) precision + goInner refs csBytes rest
 
 -- ============================================================
 -- Registry reference
@@ -369,14 +466,15 @@ validateSyncBeacon regHash datum ctx =
 {-# INLINABLE validateReveal #-}
 validateReveal
   :: PrizeTable
-  -> BuiltinByteString
   -> PrizeDatum
   -> BuiltinByteString
   -> ScriptContext
   -> Bool
-validateReveal table prizePoolHash datum playerSecret ctx =
+validateReveal table datum playerSecret ctx =
   let
     info = scriptContextTxInfo ctx
+    prizePoolBs = pdPrizePoolHash datum
+    ownPrizeHash = ownScriptHash ctx
     target = pdBeaconTarget datum
     roundId = btRound target
     ticketId = pdTicketName datum
@@ -437,28 +535,37 @@ validateReveal table prizePoolHash datum playerSecret ctx =
     -- B1PrizePool cross-validation: pool accounting must be consistent
     -- with the crystallised payout in the PrizeDatum output.
     -- This ensures PrizeValidator and B1PrizePool update atomically.
-    -- The exact reserveRelease is B1PrizePool's domain (redeemer-supplied);
-    -- PrizeValidator verifies the fundamental accounting invariants.
+    -- Effective pool invariant: payout must be affordable before reveal.
     poolOk =
-      case findB1PrizePoolOutput info prizePoolHash of
+      case findB1PrizePoolOutput info prizePoolBs of
         Nothing ->
           traceIfFalse "Prize: B1PrizePool output missing" False
         Just poolOut ->
           let
-            poolIn  = readPoolInput info prizePoolHash
-            -- Reveal: payout moves from unresolvedReserve to pendingLiabilities.
-            -- totalLiquidity unchanged; pool value unchanged.
+            poolIn = readPoolInput info prizePoolBs
             newReserve = ppUnresolvedReserve poolOut
             oldReserve = ppUnresolvedReserve poolIn
           in
-               traceIfFalse "Prize: pool liabilities wrong"
-                 (ppPendingLiabilities poolOut == ppPendingLiabilities poolIn + amountUsdm)
+               traceIfFalse "Prize: pool prize hash mismatch"
+                 (ppPrizeHash poolOut == ownPrizeHash)
+            && traceIfFalse "Prize: input pool prize hash mismatch"
+                 (ppPrizeHash poolIn == ownPrizeHash)
+            && traceIfFalse "Prize: payout exceeds effective pool"
+                 (amountUsdm
+                    <= ppTotalLiquidity poolIn
+                      - ppPendingLiabilities poolIn
+                      - ppUnresolvedReserve poolIn
+                      - ppLockedJackpot poolIn)
+            && traceIfFalse "Prize: pool liabilities wrong"
+                 (ppPendingLiabilities poolOut
+                    == ppPendingLiabilities poolIn + amountUsdm)
             && traceIfFalse "Prize: pool reserve must decrease"
                  (newReserve < oldReserve)
             && traceIfFalse "Prize: pool liquidity unchanged"
                  (ppTotalLiquidity poolOut == ppTotalLiquidity poolIn)
             && traceIfFalse "Prize: pool count wrong"
-                 (ppUnresolvedTicketCount poolOut == ppUnresolvedTicketCount poolIn - 1)
+                 (ppUnresolvedTicketCount poolOut
+                    == ppUnresolvedTicketCount poolIn - 1)
   in
        traceIfFalse "Prize: already revealed" (pdStatus datum == Pending)
     && traceIfFalse "Prize: beacon not ready" (pdBeaconStatus datum == BeaconReady)
@@ -468,6 +575,7 @@ validateReveal table prizePoolHash datum playerSecret ctx =
     && traceIfFalse "Prize: bad ticket commitment" (ticketBinding == pdCommitment datum)
     && traceIfFalse "Prize: bad symbols len" (lengthOfByteString expectedSymbols == 6)
     && traceIfFalse "Prize: multi input" (countOwnScriptInputs ctx == 1)
+    && traceIfFalse "Prize: multi pool input" (countPoolInputs info prizePoolBs == 1)
     && traceIfFalse "Prize: value not preserved (reveal)" (valuePreserved ctx)
     && traceIfFalse "Prize: bad reveal continuing" nextOk
     && traceIfFalse "Prize: pool accounting wrong" poolOk
@@ -479,13 +587,15 @@ validateReveal table prizePoolHash datum playerSecret ctx =
 
 {-# INLINABLE validateClaim #-}
 validateClaim
-  :: BuiltinByteString
+  :: PubKeyHash
   -> PrizeDatum
   -> ScriptContext
   -> Bool
-validateClaim prizePoolHash datum ctx =
+validateClaim oraclePublisher datum ctx =
   let
     info = scriptContextTxInfo ctx
+    prizePoolBs = pdPrizePoolHash datum
+    ownPrizeHash = ownScriptHash ctx
     ticketCs = CurrencySymbol (pdTicketPolicy datum)
     ticketTn = TokenName (pdTicketName datum)
 
@@ -506,26 +616,12 @@ validateClaim prizePoolHash datum ctx =
         Nothing ->
           traceError "Prize: ticket not in pubkey UTxO"
 
-    paymentPolicy = pdPaymentPolicy datum
-
-    paid =
-      if lengthOfByteString paymentPolicy == 0
-        then
-          sumToAddress
-            claimantAddr
-            (\v -> valueOf v adaSymbol adaToken)
-            (txInfoOutputs info)
-            >= pdPrizeAmount datum
-        else
-          sumToAddress
-            claimantAddr
-            (\v ->
-              valueOf
-                v
-                (CurrencySymbol paymentPolicy)
-                (TokenName (pdPaymentName datum)))
-            (txInfoOutputs info)
-            >= pdPrizeAmount datum
+    -- C-03: Oracle-based settlement verification.
+    -- Compute USDM value of all assets paid to claimant.
+    -- No unit mismatch: USDM value of settlement >= pdPrizeAmount (USDM sub-units).
+    claimantValue = sumValuesToAddress claimantAddr (txInfoOutputs info)
+    paidUsdm = totalUsdmValue info oraclePublisher claimantValue
+    paid = paidUsdm >= pdPrizeAmount datum
 
     -- Continuing UTxO marked Claimed; frozen economic fields immutable.
     nextOk =
@@ -548,26 +644,34 @@ validateClaim prizePoolHash datum ctx =
     -- pendingLiabilities by the exact crystallised payout.
     payout = pdPrizeAmount datum
     poolOk =
-      case findB1PrizePoolOutput info prizePoolHash of
+      case findB1PrizePoolOutput info prizePoolBs of
         Nothing ->
           traceIfFalse "Prize: B1PrizePool output missing" False
         Just poolOut ->
           let
-            poolIn = readPoolInput info prizePoolHash
+            poolIn = readPoolInput info prizePoolBs
           in
-               traceIfFalse "Prize: pool liquidity wrong"
-                 (ppTotalLiquidity poolOut == ppTotalLiquidity poolIn - payout)
+               traceIfFalse "Prize: pool prize hash mismatch"
+                 (ppPrizeHash poolOut == ownPrizeHash)
+            && traceIfFalse "Prize: input pool prize hash mismatch"
+                 (ppPrizeHash poolIn == ownPrizeHash)
+            && traceIfFalse "Prize: pool liquidity wrong"
+                 (ppTotalLiquidity poolOut
+                    == ppTotalLiquidity poolIn - payout)
             && traceIfFalse "Prize: pool liabilities wrong"
-                 (ppPendingLiabilities poolOut == ppPendingLiabilities poolIn - payout)
+                 (ppPendingLiabilities poolOut
+                    == ppPendingLiabilities poolIn - payout)
             && traceIfFalse "Prize: pool reserve unchanged"
                  (ppUnresolvedReserve poolOut == ppUnresolvedReserve poolIn)
             && traceIfFalse "Prize: pool count unchanged"
-                 (ppUnresolvedTicketCount poolOut == ppUnresolvedTicketCount poolIn)
+                 (ppUnresolvedTicketCount poolOut
+                    == ppUnresolvedTicketCount poolIn)
   in
        traceIfFalse "Prize: owner sig" ownerSigned
     && traceIfFalse "Prize: not revealed" (pdStatus datum == Revealed)
     && traceIfFalse "Prize: already claimed" (pdStatus datum /= Claimed)
     && traceIfFalse "Prize: multi input" (countOwnScriptInputs ctx == 1)
+    && traceIfFalse "Prize: multi pool input" (countPoolInputs info prizePoolBs == 1)
     && traceIfFalse "Prize: zero prize" (pdPrizeAmount datum > 0)
     && traceIfFalse "Prize: claim window closed" (claimBeforeExpiry (pdExpiresAt datum) info)
     && traceIfFalse "Prize: payout" paid
@@ -583,37 +687,36 @@ validateClaim prizePoolHash datum ctx =
 {-# INLINABLE mkValidator #-}
 mkValidator
   :: ScriptHash
-  -> ScriptHash
   -> PrizeTable
+  -> PubKeyHash
   -> PrizeDatum
   -> PrizeAction
   -> ScriptContext
   -> Bool
-mkValidator regHash prizePoolHash table datum action ctx =
-  let prizePoolBs = case prizePoolHash of ScriptHash bs -> bs
-  in case action of
+mkValidator regHash table oraclePublisher datum action ctx =
+  case action of
     SyncBeacon ->
       validateSyncBeacon regHash datum ctx
     Reveal playerSecret ->
-      validateReveal table prizePoolBs datum playerSecret ctx
+      validateReveal table datum playerSecret ctx
     Claim ->
-      validateClaim prizePoolBs datum ctx
+      validateClaim oraclePublisher datum ctx
 
 {-# INLINABLE wrap #-}
 wrap
   :: ScriptHash
-  -> ScriptHash
   -> PrizeTable
+  -> PubKeyHash
   -> BuiltinData
   -> BuiltinData
   -> BuiltinData
   -> BuiltinUnit
-wrap regHash prizePoolHash table d r ctx =
+wrap regHash table oraclePublisher d r ctx =
   check
     (mkValidator
       regHash
-      prizePoolHash
       table
+      oraclePublisher
       (unsafeFromBuiltinData d)
       (unsafeFromBuiltinData r)
       (unsafeFromBuiltinData ctx))
@@ -621,8 +724,8 @@ wrap regHash prizePoolHash table d r ctx =
 compiledValidatorFactory
   :: CompiledCode
        ( ScriptHash
-         -> ScriptHash
          -> PrizeTable
+         -> PubKeyHash
          -> BuiltinData
          -> BuiltinData
          -> BuiltinData
