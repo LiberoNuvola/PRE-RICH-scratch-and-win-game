@@ -13,10 +13,12 @@
  * PrizeValidator:
  *   ScriptHash registry
  *   -> PrizeTable
+ *   -> Oracle State singleton identity
  *   -> PubKeyHash oraclePublisher
  *
  * B1PrizePool:
  *   ScriptHash prize
+ *   -> Oracle State singleton identity
  *   -> PubKeyHash oraclePublisher
  *   -> pool token policy
  *   -> pool token name
@@ -55,6 +57,8 @@ import { defaultPrizeTable, type PrizeTable } from './gameRules'
 import {
   B1_POOL_TOKEN_POLICY_ID,
   B1_POOL_TOKEN_NAME_HEX,
+  ORACLE_STATE_POLICY_ID,
+  ORACLE_STATE_TOKEN_NAME_HEX,
 } from './config'
 
 type ScriptEnvelope = {
@@ -162,7 +166,7 @@ export function prizeTableToData(
 // ============================================================
 
 /**
- * Applica i 5 parametri alla MintPolicy factory.
+ * Applica i 7 parametri alla MintPolicy factory.
  *
  * Ordine:
  *
@@ -171,6 +175,8 @@ export function prizeTableToData(
  *   3. registryHash
  *   4. treasuryHash
  *   5. b1PrizePoolHash
+ *   6. Oracle State singleton identity
+ *   7. oraclePublisher
  *
  * C-02:
  * la MintPolicy riceve sia TreasuryHash sia B1PrizePoolHash
@@ -184,7 +190,14 @@ export function buildMintPolicy(
   registryScriptHashHex: string,
   treasuryScriptHashHex: string,
   b1PrizePoolScriptHashHex: string,
+  oracleStatePolicyId: string = ORACLE_STATE_POLICY_ID,
+  oracleStateTokenNameHex: string = ORACLE_STATE_TOKEN_NAME_HEX,
+  oraclePublisherPkhHex: string,
 ): Script {
+  if (!oracleStatePolicyId || !oracleStateTokenNameHex) {
+    throw new Error('Oracle State singleton token is not configured')
+  }
+
   const applied =
     applyParamsToScript(
       mintFactoryEnv.cborHex,
@@ -194,6 +207,8 @@ export function buildMintPolicy(
         registryScriptHashHex,
         treasuryScriptHashHex,
         b1PrizePoolScriptHashHex,
+        new Constr(0, [oracleStatePolicyId, oracleStateTokenNameHex]),
+        oraclePublisherPkhHex,
       ],
     )
 
@@ -208,27 +223,36 @@ export function buildMintPolicy(
 // ============================================================
 
 /**
- * Applica i 3 parametri alla PrizeValidator factory.
+ * Applica i 4 parametri alla PrizeValidator factory.
  *
  * Ordine:
  *
  *   1. registryHash
  *   2. PrizeTable
- *   3. oraclePublisher
+ *   3. Oracle State singleton policy
+ *   4. Oracle State singleton name
+ *   5. oraclePublisher
  *
  * NON riceve b1PrizePoolHash.
  */
 export function buildPrizeValidator(
   registryScriptHashHex: string,
   table: PrizeTable = defaultPrizeTable,
+  oracleStatePolicyId: string = ORACLE_STATE_POLICY_ID,
+  oracleStateTokenNameHex: string = ORACLE_STATE_TOKEN_NAME_HEX,
   oraclePublisherPkhHex: string,
 ): Script {
+  if (!oracleStatePolicyId || !oracleStateTokenNameHex) {
+    throw new Error('Oracle State singleton token is not configured')
+  }
+
   const applied =
     applyParamsToScript(
       prizeFactoryEnv.cborHex,
       [
         registryScriptHashHex,
         prizeTableToData(table),
+        new Constr(0, [oracleStatePolicyId, oracleStateTokenNameHex]),
         oraclePublisherPkhHex,
       ],
     )
@@ -244,27 +268,32 @@ export function buildPrizeValidator(
 // ============================================================
 
 /**
- * Applica i 4 parametri alla B1PrizePool factory.
+ * Applica i 5 parametri alla B1PrizePool factory.
  *
  * Ordine:
  *
  *   1. prizeHash
- *   2. oraclePublisher
- *   3. poolTokenPolicyId
- *   4. poolTokenNameHex
+ *   2. Oracle State singleton policy
+ *   3. Oracle State singleton name
+ *   4. oraclePublisher
+ *   5. poolTokenPolicyId
+ *   6. poolTokenNameHex
  */
 export function buildB1PrizePool(
   prizeScriptHashHex: string,
   oraclePublisherPkhHex: string,
+  oracleStatePolicyId: string = ORACLE_STATE_POLICY_ID,
+  oracleStateTokenNameHex: string = ORACLE_STATE_TOKEN_NAME_HEX,
   poolTokenPolicyId: string =
     B1_POOL_TOKEN_POLICY_ID,
   poolTokenNameHex: string =
     B1_POOL_TOKEN_NAME_HEX,
 ): Script {
-  if (
-    !poolTokenPolicyId ||
-    !poolTokenNameHex
-  ) {
+  if (!oracleStatePolicyId || !oracleStateTokenNameHex) {
+    throw new Error('Oracle State singleton token is not configured')
+  }
+
+  if (!poolTokenPolicyId || !poolTokenNameHex) {
     throw new Error(
       'B1PrizePool singleton token is not configured',
     )
@@ -275,6 +304,7 @@ export function buildB1PrizePool(
       b1PrizePoolFactoryEnv.cborHex,
       [
         prizeScriptHashHex,
+        new Constr(0, [oracleStatePolicyId, oracleStateTokenNameHex]),
         oraclePublisherPkhHex,
         poolTokenPolicyId,
         poolTokenNameHex,
@@ -331,6 +361,8 @@ export function buildScriptsFromLucid(
   },
   table: PrizeTable = defaultPrizeTable,
   oraclePublisherPkh: string = '',
+  oracleStatePolicyId: string = ORACLE_STATE_POLICY_ID,
+  oracleStateTokenNameHex: string = ORACLE_STATE_TOKEN_NAME_HEX,
   poolTokenPolicyId: string =
     B1_POOL_TOKEN_POLICY_ID,
   poolTokenNameHex: string =
@@ -363,6 +395,8 @@ export function buildScriptsFromLucid(
     buildPrizeValidator(
       registryHash,
       table,
+      oracleStatePolicyId,
+      oracleStateTokenNameHex,
       oraclePublisherPkh,
     )
 
@@ -379,6 +413,8 @@ export function buildScriptsFromLucid(
     buildB1PrizePool(
       prizeHash,
       oraclePublisherPkh,
+      oracleStatePolicyId,
+      oracleStateTokenNameHex,
       poolTokenPolicyId,
       poolTokenNameHex,
     )
@@ -399,6 +435,9 @@ export function buildScriptsFromLucid(
       registryHash,
       treasuryHash,
       b1PrizePoolHash,
+      oracleStatePolicyId,
+      oracleStateTokenNameHex,
+      oraclePublisherPkh,
     )
 
   const ticketPolicyId =

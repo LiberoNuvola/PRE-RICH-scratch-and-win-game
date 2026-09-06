@@ -36,6 +36,7 @@ import GameRules
 
 import Types
   ( PrizeAction (..)
+  , OracleStateId
   , PrizeDatum (..)
   , PrizeStatus (..)
   , BeaconStatus (..)
@@ -514,11 +515,12 @@ validateReveal table datum playerSecret ctx =
 
 {-# INLINABLE validateClaim #-}
 validateClaim
-  :: PubKeyHash
+  :: OracleStateId
+  -> PubKeyHash
   -> PrizeDatum
   -> ScriptContext
   -> Bool
-validateClaim oraclePublisher datum ctx =
+validateClaim oracleState oraclePublisher datum ctx =
   let
     info = scriptContextTxInfo ctx
     prizePoolBs = pdPrizePoolHash datum
@@ -550,6 +552,7 @@ validateClaim oraclePublisher datum ctx =
     paidUsdm =
       Economic.totalUsdmValue
         info
+        oracleState
         oraclePublisher
         claimantValue
     paid = paidUsdm >= pdPrizeAmount datum
@@ -619,34 +622,37 @@ validateClaim oraclePublisher datum ctx =
 mkValidator
   :: ScriptHash
   -> PrizeTable
+  -> OracleStateId
   -> PubKeyHash
   -> PrizeDatum
   -> PrizeAction
   -> ScriptContext
   -> Bool
-mkValidator regHash table oraclePublisher datum action ctx =
+mkValidator regHash table oracleState oraclePublisher datum action ctx =
   case action of
     SyncBeacon ->
       validateSyncBeacon regHash datum ctx
     Reveal playerSecret ->
       validateReveal table datum playerSecret ctx
     Claim ->
-      validateClaim oraclePublisher datum ctx
+      validateClaim oracleState oraclePublisher datum ctx
 
 {-# INLINABLE wrap #-}
 wrap
   :: ScriptHash
   -> PrizeTable
+  -> BuiltinData
   -> PubKeyHash
   -> BuiltinData
   -> BuiltinData
   -> BuiltinData
   -> BuiltinUnit
-wrap regHash table oraclePublisher d r ctx =
+wrap regHash table oracleState oraclePublisher d r ctx =
   check
     (mkValidator
       regHash
       table
+      (unsafeFromBuiltinData oracleState)
       oraclePublisher
       (unsafeFromBuiltinData d)
       (unsafeFromBuiltinData r)
@@ -656,6 +662,7 @@ compiledValidatorFactory
   :: CompiledCode
        ( ScriptHash
          -> PrizeTable
+         -> BuiltinData
          -> PubKeyHash
          -> BuiltinData
          -> BuiltinData

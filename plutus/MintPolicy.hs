@@ -23,11 +23,14 @@ import Beacon
   , ticketCommitment
   )
 
+import qualified Economic
+
 import Types
   ( BeaconRegistryDatum (..)
   , BeaconStatus (..)
   , B1PrizePoolDatum (..)
   , BeaconTarget (..)
+  , OracleStateId
   , PrizeDatum (..)
   , PrizeStatus (..)
   )
@@ -45,11 +48,6 @@ integerToBuiltinByteString n =
 tokenNameFromInteger :: Integer -> TokenName
 tokenNameFromInteger n =
   TokenName (integerToBuiltinByteString n)
-
-{-# INLINABLE valueLovelace #-}
-valueLovelace :: Value -> Integer
-valueLovelace v =
-  valueOf v adaSymbol adaToken
 
 {-# INLINABLE listLength #-}
 listLength :: [a] -> Integer
@@ -348,31 +346,16 @@ newPrizeDatumValid
 -- C-02 atomic sale checks
 -- ============================================================
 
--- Current B1 launch settlement:
---
---   1 ADA = 1,000,000 lovelace
---
--- This is the settlement amount used by the current Preprod sale flow.
--- It is deliberately NOT treated as the USDM economic price.
---
--- pdPriceUsdm remains the canonical economic ticket price.
--- General ADA/USDM oracle valuation belongs to the later C-03
--- multi-asset settlement work.
-{-# INLINABLE ticketPaymentLovelace #-}
-ticketPaymentLovelace :: Integer
-ticketPaymentLovelace =
-  1000000
-
 -- ============================================================
 -- Treasury payment
 -- ============================================================
 
-{-# INLINABLE singleScriptOutputLovelace #-}
-singleScriptOutputLovelace
+{-# INLINABLE singleScriptOutputValue #-}
+singleScriptOutputValue
   :: ScriptHash
   -> TxInfo
-  -> Maybe Integer
-singleScriptOutputLovelace sh info =
+  -> Maybe Value
+singleScriptOutputValue sh info =
   go (txInfoOutputs info) Nothing
   where
     go [] found =
@@ -387,7 +370,7 @@ singleScriptOutputLovelace sh info =
                   Nothing
 
                 Nothing ->
-                  go os (Just (valueLovelace (txOutValue o)))
+                  go os (Just (txOutValue o))
 
         _ ->
           go os found
@@ -395,12 +378,25 @@ singleScriptOutputLovelace sh info =
 {-# INLINABLE atomicTreasuryPaymentValid #-}
 atomicTreasuryPaymentValid
   :: ScriptHash
+  -> OracleStateId
+  -> PubKeyHash
+  -> Integer
   -> TxInfo
   -> Bool
-atomicTreasuryPaymentValid treasuryHash info =
-  case singleScriptOutputLovelace treasuryHash info of
-    Just amount ->
-      amount == ticketPaymentLovelace
+atomicTreasuryPaymentValid
+  treasuryHash
+  oracleState
+  oraclePublisher
+  priceUsdm
+  info =
+  case singleScriptOutputValue treasuryHash info of
+    Just outputValue ->
+      Economic.totalUsdmValue
+        info
+        oracleState
+        oraclePublisher
+        outputValue
+        >= priceUsdm
 
     Nothing ->
       False
@@ -560,6 +556,8 @@ mkPolicy
   -> ScriptHash
   -> ScriptHash
   -> ScriptHash
+  -> OracleStateId
+  -> PubKeyHash
   -> ()
   -> ScriptContext
   -> Bool
@@ -569,6 +567,8 @@ mkPolicy
   regHash
   treasuryHash
   b1PrizePoolHash
+  oracleState
+  oraclePublisher
   _
   ctx
   | isExactSingleBurn ownCs minted =
@@ -611,9 +611,17 @@ mkPolicy
                     ctx
 
                 treasuryOk =
-                  atomicTreasuryPaymentValid
-                    treasuryHash
-                    info
+                  case findSinglePrizeOutput prizeHash info of
+                    Nothing ->
+                      False
+
+                    Just pd ->
+                      atomicTreasuryPaymentValid
+                        treasuryHash
+                        oracleState
+                        oraclePublisher
+                        (pdPriceUsdm pd)
+                        info
 
                 poolOk =
                   case findSinglePrizeOutput prizeHash info of
@@ -678,6 +686,8 @@ wrap
   -> ScriptHash
   -> BuiltinData
   -> BuiltinData
+  -> BuiltinData
+  -> BuiltinData
   -> BuiltinUnit
 wrap
   counterHash
@@ -685,6 +695,8 @@ wrap
   regHash
   treasuryHash
   b1PrizePoolHash
+  oracleState
+  oraclePublisher
   r
   ctx =
   check
@@ -694,6 +706,8 @@ wrap
         regHash
         treasuryHash
         b1PrizePoolHash
+        (unsafeFromBuiltinData oracleState)
+        (unsafeFromBuiltinData oraclePublisher)
         (unsafeFromBuiltinData r)
         (unsafeFromBuiltinData ctx)
     )
@@ -705,6 +719,8 @@ compiledPolicyFactory
          -> ScriptHash
          -> ScriptHash
          -> ScriptHash
+         -> BuiltinData
+         -> BuiltinData
          -> BuiltinData
          -> BuiltinData
          -> BuiltinUnit

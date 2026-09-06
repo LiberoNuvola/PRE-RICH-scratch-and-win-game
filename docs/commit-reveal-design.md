@@ -76,11 +76,11 @@ The system MUST NOT rely on a backend database as the authoritative commitment s
 
 Before the ticket can be revealed, the applicable Beacon for the target round must be available.
 
-The Beacon is validated according to one of:
+The Beacon is validated according to the configured trust model:
 
 B1: authorized publisher;
-B2: proof-verified anchor;
-B3: existing authenticated L1 anchor.
+B2: committee-attested root;
+B3: publisher-independent canonical-state proof or an authenticated L1 anchor whose validation rules enforce that canonical relationship.
 
 B3 is the preferred long-term architecture.
 

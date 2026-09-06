@@ -20,7 +20,8 @@ import PlutusTx.Prelude
 import qualified PlutusTx.AssocMap as AssocMap
 
 import Types
-  ( OracleDatum (..)
+  ( OracleStateId (..)
+  , OracleDatum (..)
   , precision
   , minUtxoLovelace
   , maxOracleAge
@@ -97,34 +98,45 @@ decodeOracleDatum info out =
     NoOutputDatum ->
       Nothing
 
--- | Resolve an oracle price from the reference-input set.
+-- | Resolve an oracle price from the authorized Oracle State reference input.
 --
--- IMPORTANT:
--- This is the valuation primitive only.
--- TODO-02 will add authentication of the actual authorized oracle state.
+-- The singleton NFT authenticates the state container. The OracleDatum and the
+-- configured singleton token must be present on the same TxOut.
 {-# INLINABLE oraclePriceFor #-}
 oraclePriceFor
   :: [TxInInfo]
+  -> OracleStateId
   -> PubKeyHash
   -> TxInfo
   -> BuiltinByteString
   -> BuiltinByteString
   -> Integer
-oraclePriceFor [] _ _ _ _ =
+oraclePriceFor [] _ _ _ _ _ =
   traceError "Economic: oracle missing"
 
 oraclePriceFor
   (i:is)
+  oracleState
   publisher
   info
   csBytes
   tnBytes =
-  case decodeOracleDatum
-         info
-         (txInInfoResolved i) of
+  let
+    out =
+      txInInfoResolved i
+
+    oracleStatePresent =
+      valueOf
+        (txOutValue out)
+        (CurrencySymbol (osiPolicy oracleState))
+        (TokenName (osiName oracleState))
+        == 1
+  in
+  case decodeOracleDatum info out of
 
     Just od
-      | odAssetPolicy od == csBytes
+      | oracleStatePresent
+      && odAssetPolicy od == csBytes
       && odAssetName od == tnBytes
       && odPublisher od == publisher
       && validOracleTimestamp
@@ -136,6 +148,7 @@ oraclePriceFor
     _ ->
       oraclePriceFor
         is
+        oracleState
         publisher
         info
         csBytes
@@ -153,10 +166,11 @@ oraclePriceFor
 {-# INLINABLE totalUsdmValue #-}
 totalUsdmValue
   :: TxInfo
+  -> OracleStateId
   -> PubKeyHash
   -> Value
   -> Integer
-totalUsdmValue info publisher val =
+totalUsdmValue info oracleState publisher val =
   go
     (txInfoReferenceInputs info)
     (AssocMap.toList (getValue val))
@@ -183,6 +197,7 @@ totalUsdmValue info publisher val =
         price =
           oraclePriceFor
             refs
+            oracleState
             publisher
             info
             csBytes
@@ -211,6 +226,7 @@ totalUsdmValue info publisher val =
 {-# INLINABLE poolUsdmValue #-}
 poolUsdmValue
   :: TxInfo
+  -> OracleStateId
   -> PubKeyHash
   -> BuiltinByteString
   -> BuiltinByteString
@@ -218,12 +234,14 @@ poolUsdmValue
   -> Integer
 poolUsdmValue
   info
+  oracleState
   publisher
   poolPolicy
   poolName
   val =
   totalUsdmValue
     info
+    oracleState
     publisher
     ( val
       - singleton

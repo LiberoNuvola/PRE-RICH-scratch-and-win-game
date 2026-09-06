@@ -439,6 +439,8 @@ distributable surplus.
 
 Il capitale necessario a soddisfare una priorità superiore non può essere distribuito come surplus.
 
+L'osservazione e il recupero operativi devono essere proporzionati agli eventi rilevanti per il protocollo. Maintenance rimane una categoria del protocollo e non costituisce automaticamente un diritto personale di rimborso o una quota economica per operatori, relayer, team, developer, founder o amministratori. I dettagli di provider, esecuzione e attribuzione puntuale dei costi appartengono alle specifiche e alle procedure operative.
+
 ARTICOLO 20 — PRIZEPOOL
 PrizePool è una componente economica protocol-controlled.
 

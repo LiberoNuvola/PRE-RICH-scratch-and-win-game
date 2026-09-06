@@ -1,4 +1,6 @@
-# PoC-1 Discovery Report
+# PoC-1 Discovery Report (Historical)
+
+> **Historical record, not a current specification.** This report preserves an early discovery pass and includes unverified assumptions, including a relayer trust statement and references to `sr25519`. It is superseded for current design by [docs/poc1-spec.md](../poc1-spec.md), [docs/architecture-spec.md](../architecture-spec.md), and [docs/beacon-trust-model.md](../beacon-trust-model.md). It must not be used to claim B3 implementation or to select cryptographic parameters.
 
 **Date:** 2026-09-01  
 **Status:** Discovery phase completed. Specification ready. Implementation pending.
@@ -110,7 +112,7 @@ PoC-1 Verifier (completely independent)
 
 ## PoC-1 Specification
 
-### Full specification is in: [`docs/poc1-spec.md`](../docs/poc1-spec.md)
+### Full specification is in: [docs/poc1-spec.md](../poc1-spec.md)
 
 Quick summary:
 
@@ -223,7 +225,7 @@ Same target + plausible commit + insufficient weight = MUST REJECT
 
 | File | Purpose |
 |------|---------|
-| [`docs/poc1-spec.md`](../docs/poc1-spec.md) | Complete PoC-1 specification |
+| [docs/poc1-spec.md](../poc1-spec.md) | Complete PoC-1 specification |
 | `/memories/repo/poc1-discovery.md` | Discovery notes (for future reference) |
 
 ---

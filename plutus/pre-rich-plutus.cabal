@@ -54,3 +54,16 @@ executable export-scripts
         -fno-spec-constr
         -fno-unbox-strict-fields
         -fno-unbox-small-strict-fields
+
+test-suite economic-oracle-tests
+    type:               exitcode-stdio-1.0
+    hs-source-dirs:     test
+    main-is:            EconomicOracleTest.hs
+    build-depends:
+        base ^>=4.18.2,
+        bytestring,
+        plutus-core ^>=1.67.0.0,
+        plutus-ledger-api ^>=1.67.0.0,
+        plutus-tx ^>=1.67.0.0,
+        pre-rich-plutus
+    default-language: Haskell2010

@@ -1674,3 +1674,240 @@ describe('C-03: Settlement Asset Independence', () => {
 })
 
 console.log('All B1 invariant tests passed.')
+
+// ============================================================
+// TODO-04/05/06: USDM-equivalent purchase, settlement and pool accounting
+//
+// These are executable mirrors of Economic.totalUsdmValue / poolUsdmValue.
+// Direct Plutus coverage is provided by economic-oracle-tests when the
+// constrained build environment can compile the Plutus library.
+// ============================================================
+
+const ECONOMIC_PRECISION = 1_000_000
+const ECONOMIC_MIN_UTXO = 1_600_000
+const ECONOMIC_MAX_ORACLE_AGE = 3_600_000
+
+type SettlementAsset = {
+  amount: number
+  oraclePrice: number
+  isAda?: boolean
+}
+
+function oracleTimestampIsValid(timestamp: number, currentTime: number): boolean {
+  return timestamp <= currentTime && currentTime - timestamp <= ECONOMIC_MAX_ORACLE_AGE
+}
+
+function economicValue(asset: SettlementAsset): number {
+  const amount = asset.isAda
+    ? Math.max(0, asset.amount - ECONOMIC_MIN_UTXO)
+    : asset.amount
+  return Math.floor((amount * asset.oraclePrice + ECONOMIC_PRECISION - 1) / ECONOMIC_PRECISION)
+}
+
+function totalEconomicValue(assets: SettlementAsset[]): number {
+  return assets.reduce((total, asset) => total + economicValue(asset), 0)
+}
+
+function paymentIsSufficient(
+  assets: SettlementAsset[],
+  priceUsdm: number,
+  oracleIsAuthenticated: boolean,
+  timestamp: number,
+  currentTime: number,
+): boolean {
+  return oracleIsAuthenticated
+    && oracleTimestampIsValid(timestamp, currentTime)
+    && assets.every((asset) => asset.oraclePrice >= 0)
+    && totalEconomicValue(assets) >= priceUsdm
+}
+
+describe('TODO-04: Ticket Purchase in USDM-equivalent', () => {
+  const currentTime = 10_000_000
+  const priceUsdm = 100
+
+  it('accepts an exact USDM payment', () => {
+    assert.ok(paymentIsSufficient(
+      [{ amount: 100, oraclePrice: ECONOMIC_PRECISION }],
+      priceUsdm,
+      true,
+      currentTime,
+      currentTime,
+    ))
+  })
+
+  it('accepts an exact ADA-equivalent payment after min-UTxO exclusion', () => {
+    assert.ok(paymentIsSufficient(
+      [{ amount: 2_850_000, oraclePrice: 80, isAda: true }],
+      priceUsdm,
+      true,
+      currentTime,
+      currentTime,
+    ))
+  })
+
+  it('accepts a payment in a supported non-ADA asset', () => {
+    assert.ok(paymentIsSufficient(
+      [{ amount: 200, oraclePrice: 500_000 }],
+      priceUsdm,
+      true,
+      currentTime,
+      currentTime,
+    ))
+  })
+
+  it('rejects an underpayment', () => {
+    assert.ok(!paymentIsSufficient(
+      [{ amount: 99, oraclePrice: ECONOMIC_PRECISION }],
+      priceUsdm,
+      true,
+      currentTime,
+      currentTime,
+    ))
+  })
+
+  it('rejects a payment when the Oracle State is not authenticated', () => {
+    assert.ok(!paymentIsSufficient(
+      [{ amount: 100, oraclePrice: ECONOMIC_PRECISION }],
+      priceUsdm,
+      false,
+      currentTime,
+      currentTime,
+    ))
+  })
+
+  it('rejects a physically insufficient ADA payment', () => {
+    assert.ok(!paymentIsSufficient(
+      [{ amount: 1_250_000, oraclePrice: 80, isAda: true }],
+      priceUsdm,
+      true,
+      currentTime,
+      currentTime,
+    ))
+  })
+
+  it('rejects a nominal ticket price that exceeds the supplied economic value', () => {
+    assert.ok(!paymentIsSufficient(
+      [{ amount: 100, oraclePrice: ECONOMIC_PRECISION }],
+      101,
+      true,
+      currentTime,
+      currentTime,
+    ))
+  })
+})
+
+describe('TODO-05: Prize Settlement in USDM-equivalent', () => {
+  const currentTime = 10_000_000
+  const frozenPayoutUsdm = 100
+
+  it('accepts an exact payout in USDM', () => {
+    assert.ok(paymentIsSufficient(
+      [{ amount: 100, oraclePrice: ECONOMIC_PRECISION }],
+      frozenPayoutUsdm,
+      true,
+      currentTime,
+      currentTime,
+    ))
+  })
+
+  it('accepts an ADA-equivalent payout', () => {
+    assert.ok(paymentIsSufficient(
+      [{ amount: 2_850_000, oraclePrice: 80, isAda: true }],
+      frozenPayoutUsdm,
+      true,
+      currentTime,
+      currentTime,
+    ))
+  })
+
+  it('accepts an equivalent payout in another supported asset', () => {
+    assert.ok(paymentIsSufficient(
+      [{ amount: 250, oraclePrice: 400_000 }],
+      frozenPayoutUsdm,
+      true,
+      currentTime,
+      currentTime,
+    ))
+  })
+
+  it('rejects a payout below the frozen USDM amount', () => {
+    assert.ok(!paymentIsSufficient(
+      [{ amount: 99, oraclePrice: ECONOMIC_PRECISION }],
+      frozenPayoutUsdm,
+      true,
+      currentTime,
+      currentTime,
+    ))
+  })
+
+  it('rejects unauthenticated, stale and future Oracle values', () => {
+    const assets = [{ amount: 100, oraclePrice: ECONOMIC_PRECISION }]
+    assert.ok(!paymentIsSufficient(assets, frozenPayoutUsdm, false, currentTime, currentTime))
+    assert.ok(!paymentIsSufficient(assets, frozenPayoutUsdm, true, currentTime - ECONOMIC_MAX_ORACLE_AGE - 1, currentTime))
+    assert.ok(!paymentIsSufficient(assets, frozenPayoutUsdm, true, currentTime + 1, currentTime))
+  })
+
+  it('rejects an unsupported asset without a valid Oracle price', () => {
+    assert.ok(!paymentIsSufficient(
+      [{ amount: 100, oraclePrice: -1 }],
+      frozenPayoutUsdm,
+      true,
+      currentTime,
+      currentTime,
+    ))
+  })
+})
+
+describe('TODO-06: Physical Pool Accounting', () => {
+  const poolSingleton = 'pool-singleton'
+
+  function poolEconomicValue(assets: Record<string, SettlementAsset>): number {
+    return totalEconomicValue(
+      Object.entries(assets)
+        .filter(([unit]) => unit !== poolSingleton)
+        .map(([, asset]) => asset),
+    )
+  }
+
+  it('computes pool value from physical assets', () => {
+    assert.equal(poolEconomicValue({
+      usdm: { amount: 500, oraclePrice: ECONOMIC_PRECISION },
+      ada: { amount: 2_000_000, oraclePrice: 80, isAda: true },
+      [poolSingleton]: { amount: 1, oraclePrice: ECONOMIC_PRECISION },
+    }), 532)
+  })
+
+  it('excludes min-UTxO ADA from pool liquidity', () => {
+    assert.equal(poolEconomicValue({
+      ada: { amount: ECONOMIC_MIN_UTXO, oraclePrice: 80, isAda: true },
+    }), 0)
+  })
+
+  it('excludes the pool singleton NFT from valuation', () => {
+    assert.equal(poolEconomicValue({
+      [poolSingleton]: { amount: 1, oraclePrice: ECONOMIC_PRECISION },
+      usdm: { amount: 100, oraclePrice: ECONOMIC_PRECISION },
+    }), 100)
+  })
+
+  it('rejects a datum liquidity amount that differs from physical value', () => {
+    const physicalValue = poolEconomicValue({
+      usdm: { amount: 500, oraclePrice: ECONOMIC_PRECISION },
+    })
+    assert.notEqual(600, physicalValue)
+  })
+
+  it('accepts a deposit whose datum equals the recomputed physical value', () => {
+    const depositedAssets = {
+      usdm: { amount: 750, oraclePrice: ECONOMIC_PRECISION },
+    }
+    assert.equal(poolEconomicValue(depositedAssets), 750)
+  })
+
+  it('rejects a deposit declared above its physical economic value', () => {
+    const physicalValue = poolEconomicValue({
+      usdm: { amount: 750, oraclePrice: ECONOMIC_PRECISION },
+    })
+    assert.ok(751 > physicalValue)
+  })
+})

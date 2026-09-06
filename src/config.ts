@@ -14,6 +14,8 @@ export const PRE_POLICY_ID = '1b29fda97d0fd321398c5b7b3285fdaadd519a0d0029328533
 export const PRE_ASSET_NAME_HEX = '5052452d5252494348'
 export const RELAYER_PKH = env('VITE_RELAYER_PKH')
 export const ORACLE_PUBLISHER_PKH = env('VITE_ORACLE_PUBLISHER_PKH')
+export const ORACLE_STATE_POLICY_ID = env('VITE_ORACLE_STATE_POLICY_ID')
+export const ORACLE_STATE_TOKEN_NAME_HEX = env('VITE_ORACLE_STATE_TOKEN_NAME_HEX')
 
 // B1 singleton PrizePool authority NFT. Must be minted once at deployment.
 export const B1_POOL_TOKEN_POLICY_ID = env('VITE_B1_POOL_TOKEN_POLICY_ID')

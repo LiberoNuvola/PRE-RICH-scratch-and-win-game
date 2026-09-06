@@ -18,8 +18,9 @@
 ### Relayer
 - polls treasury state
 - triggers `distribute` tx when threshold is reached
-- receives relayer reward
 - performs swap or rebalance tasks as configured
+
+The relayer is an operational submitter, not an economic authority. A relayer has no automatic entitlement to Maintenance, protocol revenue or reimbursement. Any execution reward or cost reimbursement must be explicitly governed, implemented and independently auditable; it must not be inferred from this runbook or from operation of the service.
 
 ## Responsibilities
 
@@ -33,13 +34,13 @@ User actions:
 - serial counter progression on-chain
 - treasury accumulation
 - distribution trigger via relayer
-- reward payout to relayer
+- any implemented execution reward must follow its explicit on-chain rule
 
 ## Required checks before production
 - verify no API key is embedded in browser bundle
 - verify treasury distribution addresses are configured
 - verify admin keys are not present in repo or frontend
-- verify relayer reward is included in total distribution calculation
+- verify any implemented execution reward is explicitly configured, on-chain governed and included in the applicable distribution calculation
 - verify threshold and percentage configuration in datum
 
 ## Failure handling

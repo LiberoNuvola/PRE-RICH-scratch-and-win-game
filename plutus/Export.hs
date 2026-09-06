@@ -84,7 +84,8 @@ main = do
   --
   --   1. BeaconRegistry ScriptHash
   --   2. PrizeTable
-  --   3. Oracle publisher PubKeyHash
+  --   3. Oracle State singleton identity
+  --   4. Oracle publisher PubKeyHash
   --
   -- PrizeValidator does NOT receive B1PrizePoolHash.
   -- The PrizeDatum contains pdPrizePoolHash.
@@ -92,7 +93,7 @@ main = do
 
   writeScriptJson
     "plutus/out/prizeValidatorFactory.plutus.json"
-    "PreRich Prize validator factory (apply BeaconRegistry ScriptHash, PrizeTable, oracle publisher off-chain)"
+    "PreRich Prize validator factory (apply BeaconRegistry ScriptHash, PrizeTable, Oracle State singleton identity, oracle publisher off-chain)"
     (compiledCborHex
       PrizeValidator.compiledValidatorFactory)
 
@@ -117,6 +118,8 @@ main = do
   --   3. BeaconRegistry ScriptHash
   --   4. Treasury ScriptHash
   --   5. B1PrizePool ScriptHash
+  --   6. Oracle State singleton identity
+  --   7. Oracle publisher PubKeyHash
   --
   -- All five parameters are applied OFF-CHAIN.
   --
@@ -133,7 +136,7 @@ main = do
 
   writeScriptJson
     "plutus/out/mintPolicyFactory.plutus.json"
-    "PreRich Mint policy factory (apply CounterHash, PrizeValidatorHash, BeaconRegistryHash, TreasuryHash, B1PrizePoolHash off-chain)"
+    "PreRich Mint policy factory (apply CounterHash, PrizeValidatorHash, BeaconRegistryHash, TreasuryHash, B1PrizePoolHash, Oracle State singleton identity, oracle publisher off-chain)"
     (compiledCborHex
       MintPolicy.compiledPolicyFactory)
 
@@ -154,9 +157,10 @@ main = do
   -- Parameters:
   --
   --   1. PrizeValidator ScriptHash
-  --   2. Oracle publisher PubKeyHash
-  --   3. Pool singleton token policy
-  --   4. Pool singleton token name
+  --   2. Oracle State singleton identity
+  --   3. Oracle publisher PubKeyHash
+  --   4. Pool singleton token policy
+  --   5. Pool singleton token name
   --
   -- The singleton token ensures there is one protocol Pool state
   -- UTxO for the configured B1PrizePool instance.
@@ -164,7 +168,7 @@ main = do
 
   writeScriptJson
     "plutus/out/b1PrizePoolFactory.plutus.json"
-    "PreRich B1 PrizePool factory (apply PrizeValidator ScriptHash, oracle publisher, pool singleton token off-chain)"
+    "PreRich B1 PrizePool factory (apply PrizeValidator ScriptHash, Oracle State singleton identity, oracle publisher, pool singleton token off-chain)"
     (compiledCborHex
       B1PrizePool.compiledValidatorFactory)
 

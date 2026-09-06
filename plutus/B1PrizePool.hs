@@ -19,6 +19,7 @@ import qualified Economic
 import Types
   ( B1PrizePoolDatum (..)
   , B1PrizePoolAction (..)
+  , OracleStateId
   , PrizeDatum (..)
   , PrizeStatus (..)
   )
@@ -380,16 +381,18 @@ pkElem x (y:ys) =
 {-# INLINABLE payoutPaidUsdm #-}
 payoutPaidUsdm
   :: TxInfo
+  -> OracleStateId
   -> PubKeyHash
   -> PubKeyHash
   -> Integer
   -> [TxOut]
   -> Bool
-payoutPaidUsdm _ _ _ _ [] =
+payoutPaidUsdm _ _ _ _ _ [] =
   False
 
 payoutPaidUsdm
   info
+  oracleState
   oraclePublisher
   pkh
   requiredUsdm
@@ -416,6 +419,7 @@ payoutPaidUsdm
           usdmValue =
             Economic.totalUsdmValue
               info
+              oracleState
               oraclePublisher
               outValue
 
@@ -423,6 +427,7 @@ payoutPaidUsdm
           usdmValue >= requiredUsdm
             || payoutPaidUsdm
                  info
+                 oracleState
                  oraclePublisher
                  pkh
                  requiredUsdm
@@ -431,6 +436,7 @@ payoutPaidUsdm
       else
         payoutPaidUsdm
           info
+          oracleState
           oraclePublisher
           pkh
           requiredUsdm
@@ -470,16 +476,25 @@ transactionAtOrAfter expiresAt info =
 {-# INLINABLE recomputedLiquidity #-}
 recomputedLiquidity
   :: TxInfo
+  -> OracleStateId
   -> PubKeyHash
+  -> BuiltinByteString
+  -> BuiltinByteString
   -> Value
   -> Integer
 recomputedLiquidity
   info
+  oracleState
   publisher
+  poolPolicy
+  poolName
   val =
-  Economic.totalUsdmValue
+  Economic.poolUsdmValue
     info
+    oracleState
     publisher
+    poolPolicy
+    poolName
     val
 
 -- ============================================================
@@ -538,6 +553,7 @@ ticketMinted
 {-# INLINABLE mkValidator #-}
 mkValidator
   :: ScriptHash
+  -> OracleStateId
   -> PubKeyHash
   -> BuiltinByteString
   -> BuiltinByteString
@@ -547,6 +563,7 @@ mkValidator
   -> Bool
 mkValidator
   prizeHash
+  oracleState
   oraclePublisher
   poolPolicy
   poolName
@@ -590,7 +607,10 @@ mkValidator
             recalcLiq =
               recomputedLiquidity
                 info
+                oracleState
                 oraclePublisher
+                poolPolicy
+                poolName
                 ownOutVal
 
           in
@@ -864,6 +884,7 @@ mkValidator
                            Just pkh ->
                              payoutPaidUsdm
                                info
+                               oracleState
                                oraclePublisher
                                pkh
                                (pdPrizeAmount pd)
@@ -875,6 +896,7 @@ mkValidator
                        poolInputUsdm =
                          Economic.poolUsdmValue
                            info
+                           oracleState
                            oraclePublisher
                            poolPolicy
                            poolName
@@ -884,6 +906,7 @@ mkValidator
                        poolOutputUsdm =
                          Economic.poolUsdmValue
                            info
+                           oracleState
                            oraclePublisher
                            poolPolicy
                            poolName
@@ -1031,9 +1054,11 @@ wrap
   -> BuiltinData
   -> BuiltinData
   -> BuiltinData
+  -> BuiltinData
   -> BuiltinUnit
 wrap
   prizeHash
+  oracleState
   oraclePublisher
   poolPolicy
   poolName
@@ -1043,6 +1068,7 @@ wrap
   check
     ( mkValidator
         (unsafeFromBuiltinData prizeHash)
+        (unsafeFromBuiltinData oracleState)
         (unsafeFromBuiltinData oraclePublisher)
         (unsafeFromBuiltinData poolPolicy)
         (unsafeFromBuiltinData poolName)
@@ -1054,6 +1080,7 @@ wrap
 compiledValidatorFactory
   :: CompiledCode
        ( BuiltinData
+         -> BuiltinData
          -> BuiltinData
          -> BuiltinData
          -> BuiltinData
