@@ -10,6 +10,7 @@ library
         Beacon
         GameRules
         BeaconRegistry
+        Economic
         B1PrizePool
         CounterValidator
         MintPolicy
@@ -33,16 +34,7 @@ library
 executable export-scripts
     hs-source-dirs:     .
     main-is:            Export.hs
-    other-modules:
-        Types
-        Beacon
-        GameRules
-        BeaconRegistry
-        B1PrizePool
-        CounterValidator
-        MintPolicy
-        PrizeValidator
-        Treasury
+   
     build-depends:
         base ^>=4.18.2,
         plutus-core ^>=1.67.0.0,

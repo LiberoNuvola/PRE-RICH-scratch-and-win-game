@@ -18,6 +18,7 @@ module Types
   , B1PrizePoolAction (..)
   , TreasuryDatum (..)
   , TreasuryAction (..)
+  , OracleStateId (..)
   , OracleDatum (..)
   , precision
   , minUtxoLovelace
@@ -110,16 +111,31 @@ PlutusTx.unstableMakeIsData ''BeaconRegistryAction
 precision :: Integer
 precision = 1000000
 
+
 -- | Minimum UTxO ADA (1.6 ADA = 1_600_000 lovelace).
 -- This ADA is NOT economic liquidity; it is a protocol requirement.
 {-# INLINABLE minUtxoLovelace #-}
 minUtxoLovelace :: Integer
 minUtxoLovelace = 1600000
 
+
 -- | Maximum oracle age in milliseconds (1 hour).
 {-# INLINABLE maxOracleAge #-}
 maxOracleAge :: Integer
 maxOracleAge = 3600000
+
+
+-- | Canonical identity of the Oracle State UTxO.
+--
+-- The identified UTxO must carry exactly one unit of the singleton NFT
+-- identified by this policy/name pair. The identity authenticates the
+-- state container; the OracleDatum below remains the price payload.
+data OracleStateId = OracleStateId
+  { osiPolicy :: BuiltinByteString
+  , osiName   :: BuiltinByteString
+  }
+
+PlutusTx.unstableMakeIsData ''OracleStateId
 
 
 -- | Oracle price datum.
@@ -314,7 +330,6 @@ data TreasuryDatum = TreasuryDatum
   }
 
 PlutusTx.unstableMakeIsData ''TreasuryDatum
-
 
 data TreasuryAction = Distribute
 

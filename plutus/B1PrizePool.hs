@@ -14,17 +14,13 @@ import PlutusLedgerApi.V2
 import PlutusLedgerApi.V2.Contexts
 import PlutusTx
 import PlutusTx.Prelude hiding (Semigroup (..), unless)
-import qualified PlutusTx.AssocMap as AssocMap
+import qualified Economic
 
 import Types
   ( B1PrizePoolDatum (..)
   , B1PrizePoolAction (..)
   , PrizeDatum (..)
   , PrizeStatus (..)
-  , OracleDatum (..)
-  , precision
-  , minUtxoLovelace
-  , maxOracleAge
   )
 
 -- ============================================================
@@ -418,7 +414,7 @@ payoutPaidUsdm
             txOutValue o
 
           usdmValue =
-            totalUsdmValue
+            Economic.totalUsdmValue
               info
               oraclePublisher
               outValue
@@ -469,204 +465,6 @@ transactionAtOrAfter expiresAt info =
     _ ->
       False
 
--- ============================================================
--- Oracle helpers (C-03)
--- ============================================================
-
-{-# OPAQUE decodeOracleDatum #-}
-decodeOracleDatum
-  :: TxInfo
-  -> TxOut
-  -> Maybe OracleDatum
-decodeOracleDatum info out =
-  case txOutDatum out of
-    OutputDatum d ->
-      fromBuiltinData (getDatum d)
-
-    OutputDatumHash dh ->
-      case findDatum dh info of
-        Just d ->
-          fromBuiltinData (getDatum d)
-
-        Nothing ->
-          Nothing
-
-    NoOutputDatum ->
-      Nothing
-
-{-# OPAQUE validOracleTimestamp #-}
-validOracleTimestamp
-  :: Integer
-  -> TxInfo
-  -> Bool
-validOracleTimestamp timestamp info =
-  case ivTo (txInfoValidRange info) of
-    UpperBound (Finite t) _ ->
-      let
-        now =
-          getPOSIXTime t
-
-      in
-        now - timestamp <= maxOracleAge
-          && timestamp <= now
-
-    _ ->
-      False
-
--- ============================================================
--- USDM value computation (C-03)
--- ============================================================
-
--- | Ceiling division: (a + b - 1) / b.
---   Safe rounding direction: payout can never be underfunded.
-{-# OPAQUE ceilingDiv #-}
-ceilingDiv
-  :: Integer
-  -> Integer
-  -> Integer
-ceilingDiv a b
-  | b == 0 =
-      traceError "B1PrizePool: division by zero"
-
-  | a <= 0 =
-      0
-
-  | b < 0 =
-      traceError "B1PrizePool: invalid divisor"
-
-  | otherwise =
-      (a + b - 1) `divide` b
-
-{-# OPAQUE oraclePriceFor #-}
-oraclePriceFor
-  :: [TxInInfo]
-  -> PubKeyHash
-  -> TxInfo
-  -> BuiltinByteString
-  -> BuiltinByteString
-  -> Integer
-oraclePriceFor [] _ _ _ _ =
-  traceError "B1PrizePool: oracle missing"
-
-oraclePriceFor
-  (i:is)
-  publisher
-  info
-  csBytes
-  tnBytes =
-  case decodeOracleDatum info (txInInfoResolved i) of
-    Just od
-      | odAssetPolicy od == csBytes
-      && odAssetName od == tnBytes
-      && odPublisher od == publisher
-      && validOracleTimestamp
-           (odTimestamp od)
-           info ->
-          odPrice od
-
-    _ ->
-      oraclePriceFor
-        is
-        publisher
-        info
-        csBytes
-        tnBytes
-
--- | Compute total USDM-denominated value of a Value.
---
--- For ADA:
---   excludes min-UTxO,
---   then converts remaining ADA via oracle.
---
--- For non-ADA:
---   converts entire amount via oracle.
-{-# INLINABLE totalUsdmValue #-}
-totalUsdmValue
-  :: TxInfo
-  -> PubKeyHash
-  -> Value
-  -> Integer
-totalUsdmValue info publisher val =
-  let
-    refs =
-      txInfoReferenceInputs info
-
-  in
-    go
-      refs
-      (AssocMap.toList (getValue val))
-
-  where
-    go _ [] =
-      0
-
-    go refs ((cs, innerMap):rest) =
-      goInner
-        refs
-        (unCurrencySymbol cs)
-        (AssocMap.toList innerMap)
-        + go refs rest
-
-    goInner _ _ [] =
-      0
-
-    goInner
-      refs
-      csBytes
-      ((tn, amt):rest) =
-      let
-        price =
-          oraclePriceFor
-            refs
-            publisher
-            info
-            csBytes
-            (unTokenName tn)
-
-        economicAmt
-          | csBytes == unCurrencySymbol adaSymbol
-          && unTokenName tn == unTokenName adaToken =
-              max
-                0
-                (amt - minUtxoLovelace)
-
-          | otherwise =
-              amt
-
-      in
-        ceilingDiv
-          (economicAmt * price)
-          precision
-        + goInner
-            refs
-            csBytes
-            rest
-
--- | Value the Pool while excluding its non-economic singleton NFT.
-{-# INLINABLE poolUsdmValue #-}
-poolUsdmValue
-  :: TxInfo
-  -> PubKeyHash
-  -> BuiltinByteString
-  -> BuiltinByteString
-  -> Value
-  -> Integer
-poolUsdmValue
-  info
-  publisher
-  poolPolicy
-  poolName
-  val =
-  totalUsdmValue
-    info
-    publisher
-    ( val
-      - singleton
-          (CurrencySymbol poolPolicy)
-          (TokenName poolName)
-          1
-    )
-
 -- | Compute recomputed USDM-denominated liquidity
 --   of the PrizePool UTxO.
 {-# INLINABLE recomputedLiquidity #-}
@@ -679,7 +477,7 @@ recomputedLiquidity
   info
   publisher
   val =
-  totalUsdmValue
+  Economic.totalUsdmValue
     info
     publisher
     val
@@ -1075,7 +873,7 @@ mkValidator
                              False
 
                        poolInputUsdm =
-                         poolUsdmValue
+                         Economic.poolUsdmValue
                            info
                            oraclePublisher
                            poolPolicy
@@ -1084,7 +882,7 @@ mkValidator
                              (ownInputResolved ctx))
 
                        poolOutputUsdm =
-                         poolUsdmValue
+                         Economic.poolUsdmValue
                            info
                            oraclePublisher
                            poolPolicy

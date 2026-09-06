@@ -43,10 +43,10 @@ oracleMaxAge = maxOracleAge
 -- can never be accepted below its required USDM value.
 {-# INLINABLE ceilingDiv #-}
 ceilingDiv :: Integer -> Integer -> Integer
-ceilingDiv _ 0 =
-  traceError "Economic: division by zero"
-
 ceilingDiv a b
+  | b == 0 =
+      traceError "Economic: division by zero"
+
   | a <= 0 =
       0
 

@@ -14,7 +14,7 @@ import PlutusLedgerApi.V2
 import PlutusLedgerApi.V2.Contexts
 import PlutusTx
 import PlutusTx.Prelude hiding (unless)
-import qualified PlutusTx.AssocMap as AssocMap
+import qualified Economic
 
 import Beacon
   ( playerCommitment
@@ -42,10 +42,6 @@ import Types
   , BeaconTarget (..)
   , BeaconRegistryDatum (..)
   , B1PrizePoolDatum (..)
-  , OracleDatum (..)
-  , precision
-  , minUtxoLovelace
-  , maxOracleAge
   )
 
 -- ============================================================
@@ -305,78 +301,9 @@ identityFieldsEq a b =
   && pdExpiresAt a == pdExpiresAt b
 
 -- ============================================================
--- Oracle helpers (C-03)
--- ============================================================
-
--- ============================================================
--- Oracle helpers (C-03) — precomputed flat list
--- ============================================================
-
-{-# OPAQUE decodeOracleDatum #-}
-decodeOracleDatum :: TxInfo -> TxOut -> Maybe OracleDatum
-decodeOracleDatum info out =
-  case txOutDatum out of
-    OutputDatum d -> fromBuiltinData (getDatum d)
-    OutputDatumHash dh ->
-      case findDatum dh info of
-        Just d  -> fromBuiltinData (getDatum d)
-        Nothing -> Nothing
-    NoOutputDatum -> Nothing
-
-{-# OPAQUE validOracleTimestamp #-}
-validOracleTimestamp :: Integer -> TxInfo -> Bool
-validOracleTimestamp timestamp info =
-  case ivTo (txInfoValidRange info) of
-    UpperBound (Finite t) _ ->
-      let now = getPOSIXTime t
-      in now - timestamp <= maxOracleAge && timestamp <= now
-    _ -> False
-
--- ============================================================
--- USDM value computation (C-03)
--- ============================================================
-
-{-# OPAQUE ceilingDiv #-}
-ceilingDiv :: Integer -> Integer -> Integer
-ceilingDiv a b
-  | b == 0    = traceError "Prize: division by zero"
-  | a <= 0    = 0
-  | b < 0     = traceError "Prize: invalid divisor"
-  | otherwise = (a + b - 1) `divide` b
-
-{-# OPAQUE oraclePriceFor #-}
-oraclePriceFor :: [TxInInfo] -> PubKeyHash -> TxInfo -> BuiltinByteString -> BuiltinByteString -> Integer
-oraclePriceFor [] _ _ _ _ = traceError "Prize: oracle missing"
-oraclePriceFor (i:is) publisher info csBytes tnBytes =
-  case decodeOracleDatum info (txInInfoResolved i) of
-    Just od
-      | odAssetPolicy od == csBytes
-      && odAssetName od == tnBytes
-      && odPublisher od == publisher
-      && validOracleTimestamp (odTimestamp od) info -> odPrice od
-    _ -> oraclePriceFor is publisher info csBytes tnBytes
-
-{-# INLINABLE totalUsdmValue #-}
-totalUsdmValue :: TxInfo -> PubKeyHash -> Value -> Integer
-totalUsdmValue info publisher val =
-  let refs = txInfoReferenceInputs info
-  in go refs (AssocMap.toList (getValue val))
-  where
-    go _ [] = 0
-    go refs ((cs, innerMap):rest) =
-      goInner refs (unCurrencySymbol cs) (AssocMap.toList innerMap) + go refs rest
-    goInner _ _ [] = 0
-    goInner refs csBytes ((tn, amt):rest) =
-      let price = oraclePriceFor refs publisher info csBytes (unTokenName tn)
-          economicAmt
-            | csBytes == unCurrencySymbol adaSymbol
-              && unTokenName tn == unTokenName adaToken = max 0 (amt - minUtxoLovelace)
-            | otherwise = amt
-      in ceilingDiv (economicAmt * price) precision + goInner refs csBytes rest
-
--- ============================================================
 -- Registry reference
 -- ============================================================
+
 
 {-# INLINABLE isRegistryRef #-}
 isRegistryRef :: ScriptHash -> TxInInfo -> Bool
@@ -620,7 +547,11 @@ validateClaim oraclePublisher datum ctx =
     -- Compute USDM value of all assets paid to claimant.
     -- No unit mismatch: USDM value of settlement >= pdPrizeAmount (USDM sub-units).
     claimantValue = sumValuesToAddress claimantAddr (txInfoOutputs info)
-    paidUsdm = totalUsdmValue info oraclePublisher claimantValue
+    paidUsdm =
+      Economic.totalUsdmValue
+        info
+        oraclePublisher
+        claimantValue
     paid = paidUsdm >= pdPrizeAmount datum
 
     -- Continuing UTxO marked Claimed; frozen economic fields immutable.
