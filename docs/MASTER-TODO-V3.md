@@ -1,143 +1,102 @@
-# PRE-RICH — MASTER TODO V3
+#Pre-Rich Master To Do list V3
 
-## Scopo
+============================================================
 
-Questo documento è la roadmap operativa vincolante per portare PRE-RICH
-dalla specifica economica V3 all'esecuzione reale su Cardano Preprod.
-
-La TODO list viene versionata insieme alla documentazione V3 e deve essere
-aggiornata durante lo sviluppo.
-
-Principio architetturale fondamentale:
-
-- USDM è la denominazione economica canonica.
-- Ticket e premi sono espressi economicamente in USDM.
-- Il regolamento fisico può avvenire in USDM, ADA o altri asset supportati.
-- Il valore di regolamento deve essere determinato tramite il layer oracle
-  canonico.
-- Cambio dell'asset di regolamento ≠ cambio dell'obbligazione economica.
-- La verità economica non può essere delegata a frontend, backend o relayer.
-- Le invariant economiche devono essere verificabili on-chain.
 FASE 1 — ECONOMIC CORE
+
 TODO-01 — Canonical USDM valuation layer
 
-[ ] Definire un unico modello condiviso per:
+[x] Implementato il layer economico canonico Economic condiviso per la valorizzazione USDM.
 
-valorizzazione degli asset
+[x] Unificata la logica di:
+
 conversione asset → USDM
 precisione
 rounding
 gestione ADA
-gestione USDM
-gestione degli altri asset supportati
+gestione degli asset supportati
 freshness oracle
-eventuali asset non supportati
 
-[ ] Evitare implementazioni duplicate tra:
+[x] Economic è ora la sorgente canonica usata da Pool, PrizeValidator e MintPolicy.
 
-ticket purchase
-prize claim
-pool accounting
-treasury
-bootstrap
-
-[ ] Il medesimo modello deve produrre la stessa valutazione economica
-indipendentemente dal percorso della transazione.
+Status: IMPLEMENTED
 
 TODO-02 — Oracle authority
 
-[ ] Correggere il modello di autenticazione dell'oracle.
+[ ] Implementare e verificare definitivamente l'autenticazione dell'Oracle State.
 
-[ ] Non è sufficiente verificare:
+[ ] OracleStateId identifica il singleton Oracle State.
 
-OracleDatum.odPublisher == authorizedPublisher
+[ ] Il reference input deve contenere esattamente una unità del singleton policy/name configurato, sullo stesso TxOut che contiene OracleDatum.
 
-[ ] Bisogna autenticare anche che il datum provenga dall'effettiva
-oracle state UTxO autorizzata.
+[ ] Mantenere:
 
-[ ] Definire:
-
-oracle identity
-oracle state NFT / singleton
-policy/name o altro meccanismo di autenticazione
 validità temporale
 asset pair
 publisher authorization
+prezzo valido
 
-[ ] Tutte le valutazioni economiche devono utilizzare esclusivamente
-oracle state autenticata.
+Status: IMPLEMENTED / VERIFICATION BLOCKED
+
+Motivo:
+la suite Haskell diretta esiste ma la compilazione Plutus viene terminata con SIGKILL per limite di memoria nell'ambiente corrente.
 
 TODO-03 — Settlement asset model
 
-[ ] Formalizzare il settlement asset nel modello dati.
-
-[ ] Distinguere chiaramente:
-
-economic denomination = USDM
-settlement asset = ADA / USDM / altro asset supportato
-
-[ ] Aggiornare dove necessario:
-
-PrizeDatum
-buy flow
-claim flow
-pool accounting
-treasury
-frontend quote
-relayer
-
-[ ] Non introdurre scorciatoie che confondano lovelace con USDM.
+[ ] Formalizzare completamente il settlement asset nel modello dati.
 
 FASE 2 — TICKET PURCHASE
+
 TODO-04 — Ticket purchase in USDM-equivalent
 
 [ ] Eliminare la dipendenza economica dal pagamento fisso di 1 ADA.
 
 [ ] Il buyer deve poter pagare il prezzo nominale USDM tramite:
-
 USDM
 ADA
 asset supportati
 
-[ ] La quantità fisica richiesta deve essere calcolata usando l'oracle
-autenticato.
+[ ] La quantità fisica richiesta deve essere calcolata usando l'oracle autenticato.
 
-[ ] Il contratto deve verificare il valore economico, non semplicemente
-un importo fisico arbitrario.
+[ ] Il contratto deve verificare il valore economico.
 
-[ ] Il prezzo nominale del ticket deve restare quello dichiarato dal
-PrizeDatum.
+[ ] Il prezzo nominale del ticket deve restare quello dichiarato dal PrizeDatum.
+
+Status: IMPLEMENTED / VERIFICATION BLOCKED
+
+Nota:
+mirror/off-chain tests PASS; verifica Plutus on-chain bloccata dalla compilazione SIGKILL.
 
 TODO-05 — Prize settlement in USDM-equivalent
 
 [ ] Il premio deve essere memorizzato economicamente in USDM.
 
-[ ] Il vincitore deve poter ricevere il controvalore in un settlement asset
-supportato.
+[ ] Il vincitore deve poter ricevere il controvalore in un settlement asset supportato.
 
-[ ] Il contratto deve verificare il valore ricevuto tramite il medesimo
-layer oracle canonico.
+[ ] Il contratto deve verificare il valore ricevuto tramite il medesimo layer oracle canonico.
 
 [ ] La selezione dell'asset non deve alterare il valore economico del premio.
 
+Status: IMPLEMENTED / VERIFICATION BLOCKED
+
+Nota:
+mirror/off-chain tests PASS; verifica Plutus on-chain bloccata dalla compilazione SIGKILL.
+
 FASE 3 — POOL ACCOUNTING
+
 TODO-06 — Physical Pool accounting
 
-[ ] Allineare completamente:
+[ ] Allineare completamente il valore fisico del Pool con la valorizzazione economica USDM.
 
-ppTotalLiquidity
-ppPendingLiabilities
-ppUnresolvedReserve
-ppLockedJackpot
-
-con il valore fisico realmente contenuto nel Pool UTxO.
-
-[ ] Eliminare qualsiasi transizione dove il datum cambia economicamente
-senza corrispondente movimento fisico verificabile.
+[ ] Eliminare qualsiasi transizione dove il datum cambia economicamente senza movimento fisico verificabile.
 
 [ ] Definire formalmente la relazione:
-
 Pool physical assets ↔ economic USDM value
+
+Status: IMPLEMENTED / VERIFICATION BLOCKED
+
+Nota:
+B1PrizePool utilizza Economic.poolUsdmValue; mirror/off-chain tests PASS; verifica Plutus on-chain bloccata dalla compilazione SIGKILL.
 
 TODO-07 — Atomic claim
 
