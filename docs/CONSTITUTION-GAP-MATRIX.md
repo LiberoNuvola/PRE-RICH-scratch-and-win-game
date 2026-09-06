@@ -31,6 +31,8 @@ UNKNOWN
 
 Requires a dedicated file-level or integration audit
 
+Scope note: a DONE row may establish implementation or verification within the B1 baseline. It does not automatically complete a corresponding V3 item in docs/MASTER-TODO-V3.md. V3 completion must be assessed against its roadmap and V3 requirements.
+
 2. Constitutional Invariants
 
 ID
@@ -47,7 +49,7 @@ No privileged team/dev/founder/admin economic share
 
 PARTIAL
 
-Treasury architecture avoids privileged destination; relayer reward and legacy distribution wording require final reconciliation
+Treasury architecture avoids privileged destination; any execution reward remains a TODO and requires on-chain reconciliation with the liability-first model
 
 C2
 
@@ -455,6 +457,14 @@ PARTIAL
 
 EffectivePool already separates categories; complete transitions need proof
 
+O1
+
+Activity-proportional operational observation OPEX
+
+PARTIAL
+
+The normative principle is documented in Game-Economy §14.10, but no validator-enforced OPEX model, reimbursement rule or B1/B3 cost-path implementation has been verified.
+
 3.3 Jackpot
 
 ID
@@ -859,25 +869,25 @@ docs/CONSTITUTION.md
 
 Binding invariants
 
-READY FOR ECONOMIC BASELINE
+CURRENT NORMATIVE BASELINE
 
-Replace old 2-USDM text with Constitution V3
+Current text defines Constitution V3, including Genesis = 1 USDM; on-chain enforcement remains tracked separately in this matrix and MASTER-TODO-V3.
 
 docs/Game-Economy.md
 
 Normative economic implementation model
 
-READY FOR REVIEW
+PARTIAL
 
-Keep aligned with Constitution V3
+Normative baseline includes non-normative OPEX guidance; implementation and enforcement remain gap-tracked.
 
 docs/Game-Economy-Specification.md
 
 Detailed economic specification
 
-READY FOR REVIEW
+CURRENT TARGET SPECIFICATION
 
-Remove obsolete 2-USDM/floor conflicts
+Current text uses Genesis = 1 USDM and rejects a constitutional 2-USDM floor; implementation and enforcement remain gap-tracked.
 
 docs/CONSTITUTION-GAP-MATRIX.md
 
@@ -903,13 +913,21 @@ PARTIAL
 
 Reconcile economic state, class activation and claim semantics
 
-docs/B1-Audit-Report.md
+docs/archive/B1-Audit-Report.md
 
 B1 evidence
 
 HISTORICAL/VALID
 
 Do not rewrite as future architecture; append future economic gap references when needed
+
+docs/B1-Audit-Report-V3-Addendum.md
+
+B1 audit interpretation
+
+HISTORICAL/CURRENT CONTEXT
+
+Use to distinguish historical B1 validation from the incomplete V3 economic state machine.
 
 docs/B1-MIMO-AUDIT-REPORT.txt
 

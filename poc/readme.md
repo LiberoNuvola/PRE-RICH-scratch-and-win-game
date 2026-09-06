@@ -215,6 +215,6 @@ MATERIOS_RPC=http://localhost:9944 npm run poc0
 
 ## See Also
 
-- [beacon-trust-model.md](../../docs/beacon-trust-model.md) — Full B1→B3 roadmap
+- [beacon-trust-model.md](../docs/beacon-trust-model.md) — Full B1→B3 roadmap
 - [operios/partnerchain](../../materios/partnerchain/) — Substrate node source
 - Section 6 in beacon-trust-model.md — PoC-0 design and success criteria

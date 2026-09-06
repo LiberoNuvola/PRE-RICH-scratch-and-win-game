@@ -1,6 +1,6 @@
 PRE-RICH B1 Audit Report — Post-Audit Economic Addendum
 
-Applies to: docs/B1-Audit-Report.md
+Applies to: docs/archive/B1-Audit-Report.md
 Baseline: B1 hardening validation on b1-hardening
 Purpose: distinguish the validated B1 implementation from the subsequent Constitution V3 deterministic-economy design.
 

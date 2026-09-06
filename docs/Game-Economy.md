@@ -501,7 +501,91 @@ The initial ticket economic lifetime is at least 365 days.
 
 Expiry removes the remaining economic claim of an unclaimed winning ticket according to the protocol expiry rules. The NFT may remain as historical data.
 
-\n---\n\n## 14.5 Secondary Market and Economic Right\n\nTickets are transferable. For an unrevealed ticket:\n\ntext\nAlice → Bob → Charlie → Reveal\n\n\nTransfer does not modify the ticket identity, commitment, round, game configuration or future result. The economic right follows the ticket. Where permitted, a revealed but unclaimed winning ticket may also be transferred, and its crystallised payout remains attached to the ticket. Transfer must never duplicate the economic claim.\n\n---\n\n## 14.6 NFT Retention and Voluntary Burn\n\nClaiming a prize does not require destroying the ticket NFT. A claimed ticket may remain a historical collectible containing its identity, result, tier, historical payout, Jackpot status and claim status.\n\nBurning is voluntary and provides no refund, additional prize or economic bonus.\n\ntext\nCLAIM ≠ BURN\n\n\nThe protocol must never require burning a winning ticket merely to exercise its economic right.\n\n---\n\n## 14.7 Ticket-Sale Atomicity\n\nFor B1, the preferred ticket-sale transition is atomic from the protocol's economic perspective:\n\ntext\nTicket mint\n    +\nTreasury payment\n    +\nPrizePool unresolved-ticket reservation\n\n\nThe protocol must not accept an economically issued ticket when the required payment or unresolved-ticket reservation is absent. Off-chain bookkeeping cannot replace on-chain enforcement.\n\n---\n\n## 14.8 Treasury → PrizePool Funding\n\nTreasury funding of PrizePool is a protocol-controlled economic transition. The destination must be the configured PrizePool script, not an arbitrary operator wallet. Funding must preserve all liability, unresolved-reserve, Jackpot and safety-capital invariants.\n\n---\n\n## 14.9 Automatic Safety Circuit Breaker\n\nIf verified solvency deteriorates, the protocol automatically reduces new economic exposure in this order:\n\ntext\n100 → 50 → 25 → 10 → 5 → 3 → 2 → 1 → HALT\n\n\nSuspension affects only new sales. Existing tickets, historical results and crystallised payouts remain valid. Reactivation occurs only when the defined activation condition, including hysteresis, is satisfied.\n
+
+---
+
+## 14.5 Secondary Market and Economic Right
+
+Tickets are transferable. For an unrevealed ticket:
+
+```text
+Alice → Bob → Charlie → Reveal
+```
+
+Transfer does not modify the ticket identity, commitment, round, game configuration or future result. The economic right follows the ticket. Where permitted, a revealed but unclaimed winning ticket may also be transferred, and its crystallised payout remains attached to the ticket. Transfer must never duplicate the economic claim.
+
+---
+
+## 14.6 NFT Retention and Voluntary Burn
+
+Claiming a prize does not require destroying the ticket NFT. A claimed ticket may remain a historical collectible containing its identity, result, tier, historical payout, Jackpot status and claim status.
+
+Burning is voluntary and provides no refund, additional prize or economic bonus.
+
+```text
+CLAIM ≠ BURN
+```
+
+The protocol must never require burning a winning ticket merely to exercise its economic right.
+
+---
+
+## 14.7 Ticket-Sale Atomicity
+
+For B1, the preferred ticket-sale transition is atomic from the protocol's economic perspective:
+
+```text
+Ticket mint
+    +
+Treasury payment
+    +
+PrizePool unresolved-ticket reservation
+```
+
+The protocol must not accept an economically issued ticket when the required payment or unresolved-ticket reservation is absent. Off-chain bookkeeping cannot replace on-chain enforcement.
+
+---
+
+## 14.8 Treasury → PrizePool Funding
+
+Treasury funding of PrizePool is a protocol-controlled economic transition. The destination must be the configured PrizePool script, not an arbitrary operator wallet. Funding must preserve all liability, unresolved-reserve, Jackpot and safety-capital invariants.
+
+---
+
+## 14.9 Automatic Safety Circuit Breaker
+
+If verified solvency deteriorates, the protocol automatically reduces new economic exposure in this order:
+
+```text
+100 → 50 → 25 → 10 → 5 → 3 → 2 → 1 → HALT
+```
+
+Suspension affects only new sales. Existing tickets, historical results and crystallised payouts remain valid. Reactivation occurs only when the defined activation condition, including hysteresis, is satisfied.
+
+
+## 14.10 Operational OPEX and Event-Driven Observation
+
+**Operational guidance — non-normative for validators.**
+
+Maintenance allocation is a protocol accounting category. It is not an automatic entitlement to a relayer, operator, developer, founder, administrator or other service provider, and it does not itself authorize reimbursement from protocol funds.
+
+Operational observation should be activity-proportional. The expected operating modes are:
+
+- **SLEEP:** no relevant protocol event is pending; no continuous observation or polling obligation is implied.
+- **ACTIVE:** a bounded game, Treasury, ticket, reveal, claim or beacon-related event requires observation and transaction construction.
+- **QUIESCENT:** an event has completed and the system waits for the next protocol-relevant trigger.
+
+Recovery is a liveness function only. It may restore an interrupted service or resubmit objectively valid evidence, but it must not alter ticket outcomes, economic rights, Beacon selection, payout values or other protocol truth.
+
+The operational OPEX model must distinguish the cost bearer from the accounting category:
+
+- ticket purchases, Treasury funding and claims each incur their own Cardano transaction costs;
+- external oracle and adapter costs are operational expenses, not evidence of an operator entitlement;
+- B1 Beacon observation may require an authorized publisher/relayer, and its costs are attributable to that operational trust boundary;
+- a future B3 proof path may move costs to proof generation and verification, but B3 is not implemented and must not be assumed by current operations;
+- Beacon observation should be approximately once per round or checkpoint, not once per ticket, unless the implemented architecture makes per-ticket observation objectively necessary.
+
+Economic scalability requires routine observation to scale primarily with meaningful protocol events rather than idle time or ticket count. This guidance intentionally does not mandate a provider, hosting model, polling interval, retry service or reimbursement mechanism.
 
 15. Governance
 
@@ -587,3 +671,6 @@ Alternative settlement assets must preserve the frozen USDM economic value.
 
 E15 — Governance limitation
 Governance cannot override constitutional economic outcomes.
+
+E16 — Activity-proportional operational OPEX
+Operational observation and recovery must not create an automatic personal entitlement to Maintenance or protocol revenue. Operational work should scale with protocol-relevant activity and preserve the separation between current B1 publisher-authorized costs and any future B3 proof-path costs.

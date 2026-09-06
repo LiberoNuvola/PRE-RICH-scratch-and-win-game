@@ -8,6 +8,8 @@ This document is the implementation-facing companion to docs/Game-Economy.md.
 
 Game-Economy.md is authoritative for the economic policy. This file defines the state and transition requirements needed to implement that policy on-chain and off-chain without introducing conflicting economic rules.
 
+This specification defines the required target behavior; it is not evidence that every requirement is implemented or enforced in the current B1 codebase. The current implementation status is tracked by docs/CONSTITUTION-GAP-MATRIX.md and the V3 work is scheduled in docs/MASTER-TODO-V3.md.
+
 1. Canonical Economic Values
 
 The implementation must use:
@@ -307,7 +309,45 @@ The implementation must not assume that a USDM-denominated payout can be paid by
 
 Settlement-asset conversion must be explicit and verified.
 
-\n---\n\n## 15.5 Secondary Market\n\nThe ticket is transferable and the economic right follows the ticket. An unrevealed ticket may move between owners without changing its commitment, result or economic identity. A revealed but unclaimed winning ticket may also be transferred where permitted; the frozen payout remains attached to the ticket.\n\n---\n\n## 15.6 Collectible Ticket and Voluntary Burn\n\nClaiming does not require burning the NFT. A claimed ticket may remain as a historical collectible containing identity, result, tier, payout and claim state. Burning is voluntary and provides no refund, bonus or additional economic right.\n\ntext\nCLAIM ≠ BURN\n\n\n---\n\n## 15.7 Atomic Sale Requirement\n\nA B1 ticket sale must economically bind:\n\ntext\nticket mint\n+\nTreasury payment\n+\nPrizePool unresolved-ticket reservation\n\n\nThe protocol must reject a sale that mints a ticket without the corresponding required payment and reservation. Off-chain bookkeeping cannot replace on-chain enforcement.\n\n---\n\n## 15.8 Treasury → PrizePool\n\nTreasury funding must target the configured PrizePool script and preserve outstanding-liability, unresolved-reserve, Jackpot and safety-capital constraints. No operator-controlled personal wallet may be used as an intermediate economic destination.\n
+
+---
+
+## 15.5 Secondary Market
+
+The ticket is transferable and the economic right follows the ticket. An unrevealed ticket may move between owners without changing its commitment, result or economic identity. A revealed but unclaimed winning ticket may also be transferred where permitted; the frozen payout remains attached to the ticket.
+
+---
+
+## 15.6 Collectible Ticket and Voluntary Burn
+
+Claiming does not require burning the NFT. A claimed ticket may remain as a historical collectible containing identity, result, tier, payout and claim state. Burning is voluntary and provides no refund, bonus or additional economic right.
+
+```text
+CLAIM ≠ BURN
+```
+
+---
+
+## 15.7 Atomic Sale Requirement
+
+A B1 ticket sale must economically bind:
+
+```text
+ticket mint
++
+Treasury payment
++
+PrizePool unresolved-ticket reservation
+```
+
+The protocol must reject a sale that mints a ticket without the corresponding required payment and reservation. Off-chain bookkeeping cannot replace on-chain enforcement.
+
+---
+
+## 15.8 Treasury → PrizePool
+
+Treasury funding must target the configured PrizePool script and preserve outstanding-liability, unresolved-reserve, Jackpot and safety-capital constraints. No operator-controlled personal wallet may be used as an intermediate economic destination.
+
 
 16. Expiry
 

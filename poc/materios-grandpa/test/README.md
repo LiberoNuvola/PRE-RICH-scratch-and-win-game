@@ -38,3 +38,4 @@ quorum
         |
         v
 checkpoint
+```
