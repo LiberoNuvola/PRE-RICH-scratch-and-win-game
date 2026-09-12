@@ -3,6 +3,10 @@ import {
   encodeU64
 } from "./scale.js";
 
+import type {
+  GrandpaAncestryHeader
+} from "./ancestry.js";
+
 export interface GrandpaPrecommit {
   targetHash: Uint8Array;
   targetNumber: bigint;
@@ -21,9 +25,9 @@ export interface GrandpaCommit {
 }
 
 export interface GrandpaJustification {
-  round: bigint;
-  commit: GrandpaCommit;
-  votesAncestries?: unknown[];
+  readonly round: bigint;
+  readonly commit: GrandpaCommit;
+  readonly votesAncestries?: readonly GrandpaAncestryHeader[];
 }
 
 export function encodeLocalizedPrecommitPayload(

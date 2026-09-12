@@ -21,6 +21,11 @@ import {
   bytesToHex
 } from "./scale.js";
 
+import {
+  isAncestor,
+  verifyAncestryEvidence
+} from "./ancestry.js";
+
 export interface CanonicalCheckpoint {
   chainId: string;
   genesisHash: Uint8Array;
@@ -40,7 +45,11 @@ export type VerificationErrorCode =
   | "DUPLICATE_SIGNER"
   | "INVALID_SIGNATURE"
   | "INSUFFICIENT_WEIGHT"
-  | "ANCESTRY_NOT_VERIFIED";
+  | "INVALID_ANCESTRY"
+  | "ANCESTRY_NOT_VERIFIED"
+  | "PRECOMMIT_TARGET_MISSING"
+  | "PRECOMMIT_TARGET_NUMBER_MISMATCH"
+  | "PRECOMMIT_TARGET_NOT_DESCENDANT";
 
 export class VerificationError extends Error {
   readonly code: VerificationErrorCode;
@@ -155,13 +164,17 @@ export async function verifyFinality(
     const signed of
     justification.commit.precommits
   ) {
-    if (signed.signer.length !== 32) {
+    if (
+      signed.signer.length !== 32
+    ) {
       throw new VerificationError(
         "INVALID_SIGNER"
       );
     }
 
-    if (signed.signature.length !== 64) {
+    if (
+      signed.signature.length !== 64
+    ) {
       throw new VerificationError(
         "INVALID_SIGNATURE"
       );
@@ -170,7 +183,9 @@ export async function verifyFinality(
     const signerId =
       bytesToHex(signed.signer);
 
-    if (seen.has(signerId)) {
+    if (
+      seen.has(signerId)
+    ) {
       throw new VerificationError(
         "DUPLICATE_SIGNER"
       );
@@ -231,11 +246,99 @@ export async function verifyFinality(
    * verification has been requested.
    */
   if (options.verifyAncestry) {
+    let verifiedAncestry;
+
+    try {
+      verifiedAncestry =
+        verifyAncestryEvidence(
+          justification.votesAncestries,
+          justification.commit.targetHash,
+          justification.commit.targetNumber
+        );
+    } catch {
+      throw new VerificationError(
+        "INVALID_ANCESTRY"
+      );
+    }
+
     /*
-     * Header decoding is not yet wired to
-     * Materios's actual Header type.
+     * Every signed precommit target must be
+     * represented by the verified ancestry
+     * evidence and must be a descendant of
+     * the commit target.
      *
-     * Do not silently pass this check.
+     * This prevents a valid signature quorum
+     * from being assembled from blocks that
+     * are unrelated to the committed target.
+     */
+    for (
+      const signed of
+      justification.commit.precommits
+    ) {
+      const precommit =
+        signed.precommit;
+
+      const target =
+        verifiedAncestry.find(
+          header =>
+            equalBytes(
+              header.hash,
+              precommit.targetHash
+            )
+        );
+
+      if (!target) {
+        throw new VerificationError(
+          "PRECOMMIT_TARGET_MISSING"
+        );
+      }
+
+      if (
+        target.number !==
+        precommit.targetNumber
+      ) {
+        throw new VerificationError(
+          "PRECOMMIT_TARGET_NUMBER_MISMATCH"
+        );
+      }
+
+      const commitTarget =
+        verifiedAncestry.find(
+          header =>
+            equalBytes(
+              header.hash,
+              justification.commit.targetHash
+            )
+        );
+
+      if (!commitTarget) {
+        throw new VerificationError(
+          "INVALID_ANCESTRY"
+        );
+      }
+
+      if (
+        !isAncestor(
+          target,
+          commitTarget,
+          verifiedAncestry
+        )
+      ) {
+        throw new VerificationError(
+          "PRECOMMIT_TARGET_NOT_DESCENDANT"
+        );
+      }
+    }
+
+    /*
+     * The ancestry and precommit-target
+     * relationships are now structurally
+     * verified.
+     *
+     * This PoC still does not claim production
+     * GRANDPA finality because full justification
+     * semantics and authenticated authority-set
+     * transitions remain separate obligations.
      */
     throw new VerificationError(
       "ANCESTRY_NOT_VERIFIED"
