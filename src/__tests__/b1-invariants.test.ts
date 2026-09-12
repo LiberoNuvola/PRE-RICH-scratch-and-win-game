@@ -53,6 +53,10 @@ function effectivePool(d: B1PrizePoolState): number {
   )
 }
 
+function worstCaseExposure(d: B1PrizePoolState): number {
+  return 500 * d.ppUnresolvedReserve
+}
+
 function solvencyOk(d: B1PrizePoolState): boolean {
   return (
     d.ppTotalLiquidity >= 0 &&
@@ -60,7 +64,10 @@ function solvencyOk(d: B1PrizePoolState): boolean {
     d.ppUnresolvedReserve >= 0 &&
     d.ppUnresolvedTicketCount >= 0 &&
     d.ppLockedJackpot >= 0 &&
-    effectivePool(d) >= 0
+    d.ppTotalLiquidity >=
+      d.ppPendingLiabilities +
+      worstCaseExposure(d) +
+      d.ppLockedJackpot
   )
 }
 
@@ -583,7 +590,8 @@ describe('TicketClaimed', () => {
     const d = makeState({
       ppTotalLiquidity: 10_000,
       ppPendingLiabilities: 500,
-      ppUnresolvedReserve: 200,
+      ppUnresolvedReserve: 10,
+      ppUnresolvedTicketCount: 1,
       ppLockedJackpot: 0,
     })
     const n = applyTicketClaimed(d, 250)
@@ -653,12 +661,149 @@ describe('TicketExpired', () => {
   })
 })
 
+describe('G2 Worst-Case Unresolved Exposure', () => {
+  it('worst-case exposure is exactly 500x aggregate unresolved reserve', () => {
+    const d = makeState({
+      ppTotalLiquidity: 4_000,
+      ppUnresolvedReserve: 8,
+      ppUnresolvedTicketCount: 8,
+    })
+    assert.equal(worstCaseExposure(d), 4_000)
+    assert.ok(solvencyOk(d))
+  })
+
+  it('Genesis 9th 1-USDM unresolved ticket is rejected', () => {
+    const d = makeState({
+      ppTotalLiquidity: 4_000,
+      ppUnresolvedReserve: 9,
+      ppUnresolvedTicketCount: 9,
+    })
+    assert.equal(worstCaseExposure(d), 4_500)
+    assert.ok(!solvencyOk(d))
+  })
+
+  it('heterogeneous ticket prices are covered by the aggregate reserve', () => {
+    const prices = [1, 2, 5]
+    const aggregateReserve = prices.reduce((sum, price) => sum + price, 0)
+    const d = makeState({
+      ppTotalLiquidity: 4_000,
+      ppUnresolvedReserve: aggregateReserve,
+      ppUnresolvedTicketCount: prices.length,
+    })
+    assert.equal(worstCaseExposure(d), 4_000)
+    assert.ok(solvencyOk(d))
+  })
+
+  it('pending liabilities and locked jackpot are included in coverage', () => {
+    const d = makeState({
+      ppTotalLiquidity: 5_000,
+      ppPendingLiabilities: 500,
+      ppUnresolvedReserve: 8,
+      ppUnresolvedTicketCount: 8,
+      ppLockedJackpot: 500,
+    })
+    assert.ok(solvencyOk(d))
+  })
+
+  it('coverage fails when crystallized liabilities exceed remaining capacity', () => {
+    const d = makeState({
+      ppTotalLiquidity: 4_999,
+      ppPendingLiabilities: 500,
+      ppUnresolvedReserve: 8,
+      ppUnresolvedTicketCount: 8,
+      ppLockedJackpot: 500,
+    })
+    assert.ok(!solvencyOk(d))
+  })
+
+  it('TicketIssued breaks solvency when the new unresolved exposure is uncovered', () => {
+    const d = makeState({
+      ppTotalLiquidity: 4_000,
+      ppUnresolvedReserve: 8,
+      ppUnresolvedTicketCount: 8,
+    })
+    const next = applyTicketIssued(d, 1)
+    assert.equal(next.ppUnresolvedReserve, 9)
+    assert.equal(worstCaseExposure(next), 4_500)
+    assert.ok(!solvencyOk(next))
+  })
+
+  it('TicketIssued remains valid at the Genesis 8-ticket boundary', () => {
+    const d = makeState({
+      ppTotalLiquidity: 4_000,
+      ppUnresolvedReserve: 7,
+      ppUnresolvedTicketCount: 7,
+    })
+    const next = applyTicketIssued(d, 1)
+    assert.equal(next.ppUnresolvedReserve, 8)
+    assert.equal(worstCaseExposure(next), 4_000)
+    assert.ok(solvencyOk(next))
+  })
+
+  it('LOSS reveal releases one ticket reserve and preserves coverage', () => {
+    const d = makeState({
+      ppTotalLiquidity: 4_000,
+      ppUnresolvedReserve: 8,
+      ppUnresolvedTicketCount: 8,
+    })
+    const next = applyTicketRevealed(d, 1, 0)
+    assert.equal(next.ppUnresolvedReserve, 7)
+    assert.equal(next.ppPendingLiabilities, 0)
+    assert.equal(worstCaseExposure(next), 3_500)
+    assert.ok(solvencyOk(next))
+  })
+
+  it('500x reveal converts one unresolved exposure into crystallized liability', () => {
+    const d = makeState({
+      ppTotalLiquidity: 4_000,
+      ppUnresolvedReserve: 8,
+      ppUnresolvedTicketCount: 8,
+    })
+    const next = applyTicketRevealed(d, 1, 500)
+    assert.equal(next.ppUnresolvedReserve, 7)
+    assert.equal(next.ppPendingLiabilities, 500)
+    assert.equal(
+      next.ppPendingLiabilities + worstCaseExposure(next),
+      4_000,
+    )
+    assert.ok(solvencyOk(next))
+  })
+
+  it('500x claim preserves worst-case solvency after payment', () => {
+    const revealed = makeState({
+      ppTotalLiquidity: 4_000,
+      ppPendingLiabilities: 500,
+      ppUnresolvedReserve: 7,
+      ppUnresolvedTicketCount: 7,
+    })
+    const next = applyTicketClaimed(revealed, 500)
+    assert.equal(next.ppTotalLiquidity, 3_500)
+    assert.equal(next.ppPendingLiabilities, 0)
+    assert.equal(worstCaseExposure(next), 3_500)
+    assert.ok(solvencyOk(next))
+  })
+
+  it('expiry releases exactly the consumed ticket price and reduces exposure', () => {
+    const d = makeState({
+      ppTotalLiquidity: 4_000,
+      ppUnresolvedReserve: 8,
+      ppUnresolvedTicketCount: 8,
+    })
+    const next = applyTicketExpired(d, 1)
+    assert.equal(next.ppUnresolvedReserve, 7)
+    assert.equal(next.ppUnresolvedTicketCount, 7)
+    assert.equal(worstCaseExposure(next), 3_500)
+    assert.ok(solvencyOk(next))
+  })
+})
+
 describe('Solvency Invariant', () => {
   it('solvencyOk returns true for valid state', () => {
     const d = makeState({
       ppTotalLiquidity: 1000,
       ppPendingLiabilities: 100,
-      ppUnresolvedReserve: 200,
+      ppUnresolvedReserve: 1,
+      ppUnresolvedTicketCount: 1,
       ppLockedJackpot: 0,
     })
     assert.ok(solvencyOk(d))
@@ -711,38 +856,36 @@ describe('Solvency Invariant', () => {
     assert.ok(solvencyOk(n))
   })
 
-  it('full lifecycle preserves solvency when properly funded', () => {
-    // Start with 10,000 sub-units liquidity
-    let d = makeState({ ppTotalLiquidity: 10_000 })
+  it('full lifecycle preserves worst-case solvency when properly funded', () => {
+    // In this mirror, 100 sub-units = 1 USDM and the canonical maximum
+    // payout is 500x.  Eight 1-USDM unresolved tickets therefore require
+    // 400,000 sub-units of worst-case exposure.
+    let d = makeState({ ppTotalLiquidity: 400_000 })
 
-    // Issue 10 tickets at 100 sub-units reserve each
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 8; i++) {
       d = applyTicketIssued(d, 100)
     }
-    assert.equal(d.ppUnresolvedTicketCount, 10)
-    assert.equal(d.ppUnresolvedReserve, 1000)
+    assert.equal(d.ppUnresolvedTicketCount, 8)
+    assert.equal(d.ppUnresolvedReserve, 800)
+    assert.equal(worstCaseExposure(d), 400_000)
     assert.ok(solvencyOk(d))
 
-    // Reveal 5 as losses, 3 as small wins, 1 as big win, 1 unrevealed
-    d = applyTicketRevealed(d, 100, 0)    // loss
-    d = applyTicketRevealed(d, 100, 0)    // loss
-    d = applyTicketRevealed(d, 100, 0)    // loss
-    d = applyTicketRevealed(d, 100, 100)  // win 100
-    d = applyTicketRevealed(d, 100, 250)  // win 250
-    d = applyTicketRevealed(d, 100, 100)  // win 100
-    d = applyTicketRevealed(d, 100, 250)  // win 250
-    // 3 unrevealed remaining
-    assert.equal(d.ppUnresolvedTicketCount, 3)
-    assert.equal(d.ppPendingLiabilities, 700)
+    // Reveal four tickets: two losses and two 1-USDM wins.
+    d = applyTicketRevealed(d, 100, 0)
+    d = applyTicketRevealed(d, 100, 0)
+    d = applyTicketRevealed(d, 100, 100)
+    d = applyTicketRevealed(d, 100, 100)
+
+    assert.equal(d.ppUnresolvedTicketCount, 4)
+    assert.equal(d.ppUnresolvedReserve, 400)
+    assert.equal(d.ppPendingLiabilities, 200)
     assert.ok(solvencyOk(d))
 
-    // Claim all winning tickets
+    // Claim both winning tickets.
     d = applyTicketClaimed(d, 100)
-    d = applyTicketClaimed(d, 250)
     d = applyTicketClaimed(d, 100)
-    d = applyTicketClaimed(d, 250)
     assert.equal(d.ppPendingLiabilities, 0)
-    assert.equal(d.ppTotalLiquidity, 10_000 - 700)
+    assert.equal(d.ppTotalLiquidity, 399_800)
     assert.ok(solvencyOk(d))
   })
 })
@@ -1019,14 +1162,13 @@ describe('Effective Pool Before Reveal', () => {
     const d = makeState({
       ppTotalLiquidity: 1000,
       ppPendingLiabilities: 0,
-      ppUnresolvedReserve: 500,
-      ppUnresolvedTicketCount: 5,
+      ppUnresolvedReserve: 1,
+      ppUnresolvedTicketCount: 1,
       ppLockedJackpot: 0,
     })
-    // effectivePool = 1000 - 0 - 500 - 0 = 500
-    // payout = 500 is exactly at boundary
-    const n = applyTicketRevealed(d, 100, 500)
-    assert.ok(solvencyOk(n), 'payout 500 == effectivePool 500 preserves solvency')
+    // effectivePool remains >= the payout boundary in this fixture.
+    const n = applyTicketRevealed(d, 1, 500)
+    assert.ok(solvencyOk(n), 'reveal preserves the stronger G2 solvency invariant')
   })
 })
 

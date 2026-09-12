@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  trustedAuthorityStateFromVerifiedTransition,
+  validateAuthorityState
+} from "../src/authority.js";
+
+import {
   authoritySetIdentity,
   authoritySetTransitionPublicStatement,
   hashAuthoritySetTransitionStatement,
@@ -61,6 +66,28 @@ function baseStatement() {
     proofBytes: Uint8Array.from([
       0xde, 0xad
     ])
+  };
+}
+
+
+function currentTrustedState() {
+  const statement = baseStatement();
+
+  return {
+    chainId: statement.chainId,
+    genesisHash: new Uint8Array(
+      statement.genesisHash
+    ),
+    setId: statement.fromSetId,
+    authorities:
+      statement.fromAuthorities.map(
+        authority => ({
+          publicKey: new Uint8Array(
+            authority.publicKey
+          ),
+          weight: authority.weight
+        })
+      )
   };
 }
 
@@ -410,6 +437,239 @@ describe("authority transition boundary", () => {
     expect(
       verified.publicStatement.fromAuthorities
     ).toEqual(statement.fromAuthorities);
+  });
+
+
+  it("constructs trusted authority state only from a verified transition", async () => {
+    const statement = baseStatement();
+
+    const verified = await verifyAuthoritySetTransition(
+      statement,
+      {
+        verify() {
+          return true;
+        }
+      }
+    );
+
+    const trusted =
+      trustedAuthorityStateFromVerifiedTransition(
+        currentTrustedState(),
+        verified
+      );
+
+    validateAuthorityState(trusted);
+
+    expect(trusted.chainId).toBe(
+      statement.chainId
+    );
+    expect(trusted.setId).toBe(
+      statement.toSetId
+    );
+    expect(
+      Array.from(trusted.genesisHash)
+    ).toEqual(
+      Array.from(statement.genesisHash)
+    );
+    expect(
+      trusted.authorities.map(authority => ({
+        publicKey: Array.from(
+          authority.publicKey
+        ),
+        weight: authority.weight
+      }))
+    ).toEqual(
+      statement.toAuthorities.map(authority => ({
+        publicKey: Array.from(
+          authority.publicKey
+        ),
+        weight: authority.weight
+      }))
+    );
+  });
+
+  it("copies trusted authority state bytes so source mutation cannot alter it", async () => {
+    const statement = baseStatement();
+
+    const verified = await verifyAuthoritySetTransition(
+      statement,
+      {
+        verify() {
+          return true;
+        }
+      }
+    );
+
+    const trusted =
+      trustedAuthorityStateFromVerifiedTransition(
+        currentTrustedState(),
+        verified
+      );
+
+    statement.genesisHash[0] = 0x11;
+    statement.toAuthorities[0].publicKey[0] = 0x22;
+
+    expect(
+      trusted.genesisHash[0]
+    ).toBe(0xaa);
+    expect(
+      trusted.authorities[0].publicKey[0]
+    ).toBe(0x03);
+  });
+
+  it("rejects a forged verified-transition marker", () => {
+    const forged = {
+      kind:
+        "verified-materios-authority-set-transition",
+      __verifiedAuthoritySetTransition:
+        "forged",
+      publicStatement: {
+        ...authoritySetTransitionPublicStatement(
+          baseStatement()
+        )
+      }
+    } as never;
+
+    expect(() =>
+      trustedAuthorityStateFromVerifiedTransition(
+        currentTrustedState(),
+        forged
+      )
+    ).toThrow(
+      "INVALID_VERIFIED_AUTHORITY_SET_TRANSITION"
+    );
+  });
+
+  it("does not accept unverified transition evidence as trusted state", () => {
+    const evidence = {
+      kind:
+        "authority-set-transition-evidence",
+      from: {
+        trust: "untrusted-evidence",
+        chainId: "materios",
+        genesisHash: Uint8Array.from(
+          { length: 32 },
+          () => 0xaa
+        ),
+        setId: 7n,
+        authorities: [
+          authority(1),
+          authority(2)
+        ],
+        provenance: {
+          status: "unverified",
+          source: "transition"
+        }
+      },
+      to: {
+        trust: "untrusted-evidence",
+        chainId: "materios",
+        genesisHash: Uint8Array.from(
+          { length: 32 },
+          () => 0xaa
+        ),
+        setId: 8n,
+        authorities: [
+          authority(3),
+          authority(4)
+        ],
+        provenance: {
+          status: "unverified",
+          source: "transition"
+        }
+      },
+      transition: {
+        status: "unverified",
+        setId: 7n,
+        nextSetId: 8n,
+        format: "unresolved"
+      }
+    };
+
+    expect(() =>
+      trustedAuthorityStateFromVerifiedTransition(
+        currentTrustedState(),
+        evidence as never
+      )
+    ).toThrow(
+      "INVALID_VERIFIED_AUTHORITY_SET_TRANSITION"
+    );
+  });
+
+
+  it("rejects a verified transition whose from-set is not the current trusted set", async () => {
+    const statement = baseStatement();
+
+    const verified = await verifyAuthoritySetTransition(
+      statement,
+      {
+        verify() {
+          return true;
+        }
+      }
+    );
+
+    const current = currentTrustedState();
+    current.setId = 6n;
+
+    expect(() =>
+      trustedAuthorityStateFromVerifiedTransition(
+        current,
+        verified
+      )
+    ).toThrow(
+      "AUTHORITY_TRANSITION_FROM_SET_ID_MISMATCH"
+    );
+  });
+
+  it("rejects a verified transition with a different current genesis", async () => {
+    const statement = baseStatement();
+
+    const verified = await verifyAuthoritySetTransition(
+      statement,
+      {
+        verify() {
+          return true;
+        }
+      }
+    );
+
+    const current = currentTrustedState();
+    current.genesisHash[0] = 0xbb;
+
+    expect(() =>
+      trustedAuthorityStateFromVerifiedTransition(
+        current,
+        verified
+      )
+    ).toThrow(
+      "AUTHORITY_TRANSITION_GENESIS_HASH_MISMATCH"
+    );
+  });
+
+  it("rejects a verified transition whose from authority set differs from the current trusted set", async () => {
+    const statement = baseStatement();
+
+    const verified = await verifyAuthoritySetTransition(
+      statement,
+      {
+        verify() {
+          return true;
+        }
+      }
+    );
+
+    const current = currentTrustedState();
+    current.authorities[0].publicKey[0] ^= 0xff;
+
+    expect(() =>
+      trustedAuthorityStateFromVerifiedTransition(
+        current,
+        verified
+      )
+    ).toThrow(
+      "AUTHORITY_TRANSITION_FROM_AUTHORITY_SET_MISMATCH"
+    );
   });
 
 });

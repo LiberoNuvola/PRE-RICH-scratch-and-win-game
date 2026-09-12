@@ -3,6 +3,11 @@ import {
   equalBytes
 } from "./scale.js";
 
+import {
+  authoritySetIdentity,
+  type VerifiedAuthoritySetTransition
+} from "./authority-transition.js";
+
 export interface GrandpaAuthority {
   readonly publicKey: Uint8Array;
   readonly weight: bigint;
@@ -84,6 +89,97 @@ export function validateAuthorityState(
   state: TrustedAuthorityState
 ): void {
   validateAuthorityStateShape(state);
+}
+
+/**
+ * Creates trusted authority state only from the branded result of the
+ * authority-transition proof boundary.
+ *
+ * An AuthoritySetTransitionStatement or AuthoritySetTransitionEvidence is
+ * intentionally not accepted here. Both are untrusted inputs and must first
+ * pass through verifyAuthoritySetTransition().
+ */
+export function trustedAuthorityStateFromVerifiedTransition(
+  current: TrustedAuthorityState,
+  transition: VerifiedAuthoritySetTransition
+): TrustedAuthorityState {
+  if (
+    transition.kind !==
+      "verified-materios-authority-set-transition" ||
+    transition.__verifiedAuthoritySetTransition !==
+      "verified"
+  ) {
+    throw new Error(
+      "INVALID_VERIFIED_AUTHORITY_SET_TRANSITION"
+    );
+  }
+
+  validateAuthorityState(current);
+
+  const statement = transition.publicStatement;
+
+  if (
+    statement.chainId !== current.chainId
+  ) {
+    throw new Error(
+      "AUTHORITY_TRANSITION_CHAIN_ID_MISMATCH"
+    );
+  }
+
+  if (
+    !equalBytes(
+      statement.genesisHash,
+      current.genesisHash
+    )
+  ) {
+    throw new Error(
+      "AUTHORITY_TRANSITION_GENESIS_HASH_MISMATCH"
+    );
+  }
+
+  if (
+    statement.fromSetId !== current.setId
+  ) {
+    throw new Error(
+      "AUTHORITY_TRANSITION_FROM_SET_ID_MISMATCH"
+    );
+  }
+
+  if (
+    authoritySetIdentity(
+      statement.fromAuthorities
+    ) !==
+    authoritySetIdentity(
+      current.authorities
+    )
+  ) {
+    throw new Error(
+      "AUTHORITY_TRANSITION_FROM_AUTHORITY_SET_MISMATCH"
+    );
+  }
+
+  validateAuthorityStateShape({
+    chainId: statement.chainId,
+    genesisHash: statement.genesisHash,
+    setId: statement.toSetId,
+    authorities: statement.toAuthorities
+  });
+
+  return {
+    chainId: statement.chainId,
+    genesisHash: new Uint8Array(
+      statement.genesisHash
+    ),
+    setId: statement.toSetId,
+    authorities: statement.toAuthorities.map(
+      authority => ({
+        publicKey: new Uint8Array(
+          authority.publicKey
+        ),
+        weight: authority.weight
+      })
+    )
+  };
 }
 
 interface AuthorityStateShape {

@@ -1,5 +1,6 @@
 import {
   concatBytes,
+  encodeU32,
   encodeU64
 } from "./scale.js";
 
@@ -30,14 +31,66 @@ export interface GrandpaJustification {
   readonly votesAncestries?: readonly GrandpaAncestryHeader[];
 }
 
+/**
+ * Materios uses the standard finality-grandpa Message encoding.
+ *
+ * Message::Precommit has SCALE enum discriminant 1, followed by:
+ *   - target_hash: H256, 32 bytes
+ *   - target_number: BlockNumber, u32 little-endian
+ */
+export function encodeGrandpaPrecommitMessage(
+  precommit: GrandpaPrecommit
+): Uint8Array {
+  if (precommit.targetHash.length !== 32) {
+    throw new Error("INVALID_PRECOMMIT_TARGET_HASH");
+  }
+
+  if (
+    precommit.targetNumber < 0n ||
+    precommit.targetNumber > 0xffffffffn
+  ) {
+    throw new Error("INVALID_PRECOMMIT_TARGET_NUMBER");
+  }
+
+  return concatBytes(
+    Uint8Array.of(1),
+    precommit.targetHash,
+    encodeU32(precommit.targetNumber)
+  );
+}
+
+/**
+ * Exact GRANDPA localized signing payload used by Materios.
+ *
+ * sp_consensus_grandpa constructs:
+ *
+ *   (message, round, set_id).encode()
+ *
+ * and signs those bytes directly with the GRANDPA ed25519 key.
+ *
+ * There is no additional Blake2 hash in this function.
+ */
 export function encodeLocalizedPrecommitPayload(
   precommit: GrandpaPrecommit,
   round: bigint,
   setId: bigint
 ): Uint8Array {
+  if (
+    round < 0n ||
+    round > 0xffffffffffffffffn
+  ) {
+    throw new Error("INVALID_ROUND");
+  }
+
+  if (
+    setId < 0n ||
+    setId > 0xffffffffffffffffn
+  ) {
+    throw new Error("INVALID_SET_ID");
+  }
+
   return concatBytes(
-    precommit.targetHash,
-    encodeU64(precommit.targetNumber),
+    encodeGrandpaPrecommitMessage(precommit),
     encodeU64(round),
     encodeU64(setId)
   );

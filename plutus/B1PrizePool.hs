@@ -30,7 +30,12 @@ import Types
 
 -- | Effective pool = totalLiquidity - pendingLiabilities
 --   - unresolvedReserve - lockedJackpot.
---   All values are in USDM sub-units. Must be >= 0 for solvency.
+--   All values are in USDM sub-units.
+--
+--   NOTE:
+--   unresolvedReserve is the deterministic economic reservation
+--   for the ticket price. It is NOT the full worst-case payout
+--   exposure of unresolved tickets.
 {-# INLINABLE effectivePool #-}
 effectivePool :: B1PrizePoolDatum -> Integer
 effectivePool d =
@@ -39,6 +44,40 @@ effectivePool d =
     - ppUnresolvedReserve d
     - ppLockedJackpot d
 
+-- | Worst-case payout exposure of all unresolved tickets.
+--
+--   Every unresolved ticket can legally resolve to the canonical
+--   maximum payout of 500x its economic ticket price.
+--
+--   Therefore:
+--
+--     WorstCaseExposure = 500 * unresolvedReserve
+--
+--   No additional datum field is required because the exposure is
+--   deterministically derivable from the already canonical
+--   unresolved reserve.
+{-# INLINABLE worstCaseExposure #-}
+worstCaseExposure :: B1PrizePoolDatum -> Integer
+worstCaseExposure d =
+  500 * ppUnresolvedReserve d
+
+-- | Deterministic worst-case solvency invariant.
+--
+--   The PrizePool must be able to cover simultaneously:
+--
+--     1. crystallized pending liabilities;
+--     2. the maximum possible payout of every unresolved ticket;
+--     3. locked jackpot capital.
+--
+--   Hence:
+--
+--     totalLiquidity >=
+--       pendingLiabilities
+--       + 500 * unresolvedReserve
+--       + lockedJackpot
+--
+--   This is deliberately stronger than merely requiring
+--   effectivePool >= 0.
 {-# INLINABLE solvencyInvariant #-}
 solvencyInvariant :: B1PrizePoolDatum -> Bool
 solvencyInvariant d =
@@ -47,7 +86,10 @@ solvencyInvariant d =
   && ppUnresolvedReserve d >= 0
   && ppUnresolvedTicketCount d >= 0
   && ppLockedJackpot d >= 0
-  && effectivePool d >= 0
+  && ppTotalLiquidity d
+       >= ppPendingLiabilities d
+          + worstCaseExposure d
+          + ppLockedJackpot d
 
 {-# INLINABLE jackpotActive #-}
 jackpotActive :: B1PrizePoolDatum -> Bool
@@ -75,7 +117,8 @@ ownScriptHash ctx =
 countOwnInputs :: ScriptContext -> Integer
 countOwnInputs ctx =
   let
-    sh = ownScriptHash ctx
+    sh =
+      ownScriptHash ctx
 
     go [] =
       0
@@ -171,7 +214,9 @@ singletonPoolTokenValid ctx poolPolicy poolName =
 
     ownOutputAmount =
       valueOf
-        (ownOutputValue ctx) cs tn
+        (ownOutputValue ctx)
+        cs
+        tn
   in
        inputAmount == 1
     && outputAmount == 1
@@ -739,6 +784,10 @@ mkValidator
                      && ppUnresolvedReserve n
                           == ppUnresolvedReserve datum + priceUsdm
 
+                     -- G2:
+                     -- The resulting state must remain solvent
+                     -- even if every unresolved ticket later pays
+                     -- its canonical 500x maximum.
                      && solvencyInvariant n
 
         -- ==================================================
@@ -910,7 +959,8 @@ mkValidator
                            oraclePublisher
                            poolPolicy
                            poolName
-                           (ownOutputValue ctx)
+                           (txOutValue
+                             (ownOutputValue ctx))
 
                      in
                            traceIfFalse

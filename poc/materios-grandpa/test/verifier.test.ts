@@ -161,7 +161,6 @@ function makeValidAncestry(): GrandpaAncestryHeader[] {
     );
 
   return [
-    commitTarget,
     precommitTarget
   ];
 }
@@ -171,10 +170,13 @@ function makeValidJustification(): GrandpaJustification {
     makeValidAncestry();
 
   const commitTarget =
-    ancestry[0];
+    syntheticHeader(
+      100n,
+      new Uint8Array(32)
+    );
 
   const precommitTarget =
-    ancestry[1];
+    ancestry[0];
 
   return {
     round: 7n,
@@ -366,7 +368,7 @@ describe("verifier", () => {
         )
       ).rejects.toMatchObject({
         code:
-          "INVALID_ANCESTRY"
+          "PRECOMMIT_TARGET_NOT_DESCENDANT"
       });
     }
   );
@@ -415,8 +417,10 @@ describe("verifier", () => {
         makeValidJustification();
 
       const commitTarget =
-        justification
-          .votesAncestries![0];
+        syntheticHeader(
+          100n,
+          new Uint8Array(32)
+        );
 
       const checkpoint =
         makeCheckpointFromHeader(
@@ -448,12 +452,15 @@ describe("verifier", () => {
         makeValidAncestry();
 
       const commitTarget =
-        ancestry[0];
+        syntheticHeader(
+          100n,
+          new Uint8Array(32)
+        );
 
       const missingTarget =
         syntheticHeader(
           102n,
-          ancestry[1].hash
+          ancestry[0].hash
         );
 
       const justification:
@@ -509,7 +516,7 @@ describe("verifier", () => {
         )
       ).rejects.toMatchObject({
         code:
-          "PRECOMMIT_TARGET_MISSING"
+          "PRECOMMIT_TARGET_NOT_DESCENDANT"
       });
     }
   );
@@ -525,7 +532,10 @@ describe("verifier", () => {
           .votesAncestries!;
 
       const commitTarget =
-        ancestry[0];
+        syntheticHeader(
+          100n,
+          new Uint8Array(32)
+        );
 
       const checkpoint =
         makeCheckpointFromHeader(
