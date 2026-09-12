@@ -57,10 +57,36 @@ export interface AuthoritySetTransitionStatement {
 }
 
 /**
- * The exact public statement that a future proof verifier must authenticate.
- * Proof bytes are deliberately excluded: they are evidence for this
- * statement, not part of its semantic identity.
+ * A proof verifier is the only component allowed to cross the
+ * untrusted -> verified authority-transition boundary.
+ *
+ * Implementations MUST cryptographically establish the Materios claims
+ * described by the public statement. The current repository does not yet
+ * provide such an implementation; callers must therefore supply one
+ * explicitly rather than receiving trust by construction.
  */
+export interface AuthoritySetTransitionProofVerifier {
+  verify(
+    statement: AuthoritySetTransitionStatement,
+    publicStatement: AuthoritySetTransitionPublicStatement
+  ): Promise<boolean> | boolean;
+}
+
+/**
+ * Authority transition after the proof boundary has been crossed.
+ *
+ * The nominal brand prevents accidental construction from an ordinary
+ * AuthoritySetTransitionStatement in typed code. The runtime constructor is
+ * intentionally private to this module: only verifyAuthoritySetTransition
+ * can create this value.
+ */
+export interface VerifiedAuthoritySetTransition {
+  readonly kind: "verified-materios-authority-set-transition";
+  readonly publicStatement: AuthoritySetTransitionPublicStatement;
+  readonly statementHash: Uint8Array;
+  readonly __verifiedAuthoritySetTransition: "verified";
+}
+
 export interface AuthoritySetTransitionPublicStatement {
   readonly protocolVersion: 1;
   readonly chainId: string;
@@ -73,6 +99,38 @@ export interface AuthoritySetTransitionPublicStatement {
   readonly toAuthorities: readonly GrandpaAuthority[];
   readonly activationBlock: AuthorityActivationBlock;
   readonly toSetId: bigint;
+}
+
+export async function verifyAuthoritySetTransition(
+  statement: AuthoritySetTransitionStatement,
+  proofVerifier: AuthoritySetTransitionProofVerifier
+): Promise<VerifiedAuthoritySetTransition> {
+  validateAuthoritySetTransitionStatement(statement);
+
+  const publicStatement =
+    authoritySetTransitionPublicStatement(statement);
+
+  const verified =
+    await proofVerifier.verify(
+      statement,
+      publicStatement
+    );
+
+  if (!verified) {
+    throw new Error(
+      "AUTHORITY_TRANSITION_PROOF_NOT_VERIFIED"
+    );
+  }
+
+  return {
+    kind: "verified-materios-authority-set-transition",
+    publicStatement,
+    statementHash:
+      hashAuthoritySetTransitionStatement(
+        publicStatement
+      ),
+    __verifiedAuthoritySetTransition: "verified"
+  };
 }
 
 export function authoritySetTransitionPublicStatement(
