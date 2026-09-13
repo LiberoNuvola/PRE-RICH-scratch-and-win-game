@@ -1,873 +1,509 @@
-# PRE-RICH — Game Economy Specification
+PRE-RICH — GAME ECONOMY SPECIFICATION
 
-**Version:** B1
-**Status:** Normative specification
-**Protocol:** PRE-RICH Scratch & Win
-**Principle:** 100% on-chain, automatic, verifiable and non-custodial
+Version: B1
+Status: Normative implementation specification
+Protocol: PRE-RICH Scratch & Win
+Companion: docs/Game-Economy.md
 
----
+Game-Economy.md is authoritative for economic policy. This document defines implementation-facing state and transition requirements and must not introduce conflicting economic rules.
 
-## 1. Purpose
+This specification is a target/conformance specification. It is not evidence that every requirement is implemented in the current B1 codebase. Implementation truth is tracked by the Constitution Gap Matrix, validator/off-chain code and tests.
 
-This document defines the economic model of PRE-RICH.
+1. Canonical Economic Values
 
-The purpose of the game economy is to establish deterministic and verifiable rules governing:
+The implementation must use:
 
-* ticket price;
-* collection of player funds;
-* Treasury allocation;
-* PrizePool liquidity;
-* prize calculation;
-* prize liabilities;
-* jackpot activation;
-* minimum prize;
-* ticket expiry;
-* claims;
-* and the relationship between tickets and their economic rights.
+KA = 8
+KC = 4
+KD = 4
 
-The economic system must operate without discretionary intervention by a team, developer, founder, administrator, publisher, backend operator or relayer.
+Genesis ticket price = 1 USDM
+Ticket classes       = 1, 2, 3, 5, 10, 25, 50, 100 USDM
+Maximum normal win   = 500 × ticket price
+Genesis activation   = verified Treasury PRE value >= 4,000 USDM
 
-No individual participant is entitled to a protocol-defined share of the Treasury.
+There is no canonical fixed 2-USDM ticket price and no constitutional 2-USDM prize floor.
 
----
+USDM is the canonical accounting unit. ADA or another approved asset may be used for payment or settlement through verified conversion.
 
-# 2. Economic Principles
+2. Ticket Price Validation
 
-PRE-RICH follows five fundamental economic principles.
+A ticket purchase must establish:
 
-### 2.1 No privileged beneficiary
+the selected class is currently active;
 
-The protocol does not allocate a team, developer, founder or administrator share.
+the declared USDM price exactly matches the class;
 
-There is no protocol-level economic role whose purpose is to extract value for an individual operator.
+supplied payment is sufficient under the verified oracle configuration;
 
-Maintenance is a **protocol category**, not a personal beneficiary.
+the unresolved economic reserve/exposure is recorded atomically;
 
----
+the resulting state satisfies all PrizePool solvency invariants.
 
-### 2.2 Player payments enter the protocol
+The frontend quote is informational only.
 
-The canonical economic flow is:
+No floating-point arithmetic is permitted in economic validation.
 
-```text
-PLAYER
-   │
-   ▼
-TREASURY
-   │
-   ├──► PRIZE POOL
-   ├──► STAKE
-   ├──► MAINTENANCE
-   └──► RESERVE
-```
+3. Prize Rules
 
-The percentages assigned to these categories are configuration parameters subject to PRE governance, within the constitutional limits of the protocol.
+The normal five tiers are:
 
-There must be no required intermediate flow such as:
+Tier
 
-```text
-PLAYER → TEAM → TREASURY
-```
+Base multiplier
 
----
+Effective payout
 
-### 2.3 Prize determination is not discretionary
+1
 
-No backend or operator may determine:
+2
 
-* whether a ticket wins;
-* its tier;
-* its prize;
-* whether the jackpot is active;
-* which ticket receives the jackpot;
-* whether a claim is valid.
+1 × P
 
-These properties must derive from the protocol's on-chain rules and cryptographically verifiable inputs.
+2
 
----
+5
 
-### 2.4 Liquidity matters
+2.5 × P
 
-The prize economy is based on **effective liquidity**, not merely on the gross balance visible at a PrizePool address.
+3
 
-A balance cannot be considered freely available if the protocol has already incurred an economic obligation against it.
+10
 
----
+5 × P
 
-### 2.5 Economic rights belong to the ticket
+4
 
-A ticket represents an economic right.
+200
 
-If the ticket is transferred, the economic right follows the ticket.
+100 × P
+
+5
+
+1000
+
+500 × P
 
 Therefore:
 
-```text
-Alice owns Ticket #123
-        ↓
-Alice transfers Ticket #123 to Bob
-        ↓
-Bob owns the economic right associated with Ticket #123
-```
+MaximumNormalPayout(P) = 500 × P
 
-This remains true for unrevealed tickets and, where permitted, for revealed but unclaimed winning tickets.
+Payout values must be represented with integer arithmetic in the canonical economic unit/subunits.
 
----
+4. PrizePool State
 
-# 3. Canonical Ticket Price
+The B1 PrizePool must account for at least:
 
-The canonical PRE-RICH ticket price is:
+TotalLiquidity
 
-## **2 USDM**
+PendingWinningLiabilities
 
-USDM is the reference denomination displayed to the user.
+UnresolvedTicketReserve
 
-The frontend must therefore present the canonical ticket price as:
+class-aware unresolved exposure or an equivalent deterministic state
 
-> **2 USDM**
+LockedJackpotLiquidity
 
-The user may pay using:
+Jackpot level/threshold state
 
-* USDM;
-* ADA;
-* PRE;
-* or a combination of supported assets.
+active/suspended class state
 
-When payment is made using an asset other than USDM, the equivalent value is determined using the configured Charlie3 price feed.
+configuration/prize binding
 
-The conversion must be verified by the on-chain protocol.
+The singleton PrizePool authority identifies the unique pool state.
 
-The frontend display must not be considered an authority for the payment amount.
+5. Effective Pool Invariant
 
----
+The implementation must preserve:
 
-# 4. Treasury
+EffectivePool =
+    TotalLiquidity
+  - PendingWinningLiabilities
+  - UnresolvedTicketReserve
+  - LockedJackpotLiquidity
 
-All protocol revenue is directed to the on-chain Treasury.
+and:
 
-The Treasury is a protocol-controlled economic component, not an operator wallet.
+PendingWinningLiabilities
++ UnresolvedTicketReserve
++ LockedJackpotLiquidity
+<= TotalLiquidity
 
-Treasury funds may be allocated among protocol categories according to governance-controlled parameters.
+Jackpot liquidity must not be deducted twice.
 
-The principal categories are:
+6. Unresolved Tickets
 
-1. PrizePool;
-2. Stake;
-3. Maintenance;
-4. Reserve.
+Issuance must increase unresolved exposure atomically with ticket creation.
 
-The Treasury must not contain a discretionary destination that allows an operator to extract protocol revenue for personal benefit.
+Reveal must:
 
----
+release the ticket's unresolved reserve;
 
-# 5. PrizePool
+derive the result;
 
-The PrizePool is the shared liquidity reserve from which winning tickets are paid.
+create a crystallised liability for a winning result.
 
-It is not a personal wallet and does not represent funds belonging to the team or developer.
+Expiry must release unresolved exposure exactly once.
 
-The PrizePool exists to provide liquidity for protocol-defined winning obligations.
+Because ticket prices differ, aggregate unresolved count alone is insufficient. The implementation must use class-aware exposure or an equivalent deterministic mechanism.
 
-Treasury funding of the PrizePool must therefore follow an on-chain protocol rule:
+7. Statistical Reserve
 
-```text
-Treasury → PrizePool
-```
+Reference model:
 
-rather than an administrator-controlled destination such as:
+R(N) = N × μ + Z × σ × sqrt(N)
 
-```text
-Treasury → arbitrary operator wallet
-```
+Genesis reference parameters:
 
----
+μ ≈ 0.65 USDM
+σ ≈ 6.676 USDM
+Z ≈ 3.09
 
-# 6. Total Pool and Effective Pool
+This statistical reserve does not replace deterministic worst-case protection.
 
-The gross amount held by the PrizePool is not necessarily available for new prizes.
+8. Deterministic Exposure Budget
 
-PRE-RICH therefore distinguishes between:
+For price P and unresolved count N:
 
-### TOTAL POOL
+WorstCaseExposure = 500 × P × N
 
-The total assets controlled by the PrizePool.
+A sale must be rejected if the post-sale state violates:
 
-### EFFECTIVE POOL
+approved deterministic exposure budget;
 
-The portion of the PrizePool that can actually be considered available for new economic obligations.
+statistical reserve requirement;
 
-Conceptually:
+safety floor;
 
-```text
-EFFECTIVE POOL =
-    TOTAL POOL
-  - PENDING WINNING LIABILITIES
-  - UNRESOLVED-TICKET RESERVE
-```
+liability protection;
 
-The exact accounting representation is an on-chain implementation concern, but the economic invariant is mandatory:
+locked Jackpot protection;
 
-> Funds already economically committed to existing obligations must not be counted again as freely available liquidity.
+any other mandatory solvency condition.
 
----
+The check must be enforced by protocol state transition, not only by frontend or relayer logic.
 
-# 7. Winning Liabilities
+9. Automatic Class Activation and Suspension
 
-When a ticket is revealed and its prize is determined, that prize becomes an economic liability of the protocol.
+Activation is state-derived and non-discretionary.
 
-For example:
+Automatic contraction is:
 
-```text
-PrizePool = 100,000 USDM
-Existing winning liabilities = 20,000 USDM
-Unresolved-ticket reserve = 10,000 USDM
+100 → 50 → 25 → 10 → 5 → 3 → 2 → 1 → HALT
 
-Effective Pool = 70,000 USDM
-```
+Suspension affects only new sales. Existing tickets and crystallised liabilities remain valid.
 
-The protocol must not calculate future prizes as though the entire 100,000 USDM were freely available.
+The implementation must distinguish:
 
-This prevents the protocol from promising the same liquidity multiple times.
+CurrentActiveClass
+HighestClassEverActivated
 
----
+HighestClassEverActivated is monotonic and is used for Jackpot maturity.
 
-# 8. Prize Calculation
+Hysteresis
 
-Prize calculation occurs at reveal.
+Activation and suspension use separate thresholds to prevent oscillation.
 
-The conceptual sequence is:
+The existence of hysteresis is normative. Exact numerical hysteresis values are not presented as frozen constants in this baseline until explicitly adopted.
 
-```text
-REVEAL
-   ↓
-DETERMINE RESULT
-   ↓
-DETERMINE TIER
-   ↓
-CALCULATE EFFECTIVE POOL
-   ↓
-CALCULATE PAYOUT
-   ↓
-CRYSTALLIZE PAYOUT
-```
+10. Treasury Distribution
 
-The payout is therefore not determined by the frontend and is not selected by a backend operator.
+The former:
 
-Once the ticket has been revealed as a winner, its payout is fixed on-chain.
+75% PrizePool / 10% Reserve / 10% Stake / 5% Maintenance
 
----
+split is historical/non-canonical.
 
-# 9. Initial Prize Tiers
+It is not an implementation default, constitutional obligation, or current economic constant.
 
-The initial PRE-RICH tier structure is:
+Implementation must instead preserve the liability/protection-first ordering and allocate only genuine residual surplus according to explicitly governed policy.
 
-| Tier   | Base multiplier |
-| ------ | --------------: |
-| Tier 1 |               2 |
-| Tier 2 |               5 |
-| Tier 3 |              10 |
-| Tier 4 |             200 |
-| Tier 5 |            1000 |
+11. Jackpot Ladder
 
-The current game rules determine the tier from the cryptographically derived ticket result.
+Let:
 
-The economic model must preserve the distinction between:
+M = 500 × HighestClassEverActivated
 
-* the **game result**;
-* the **tier**;
-* and the **final payout**.
+Reference targets:
 
-The tier alone is not a substitute for the on-chain payout calculation.
+J1 = 10 × M
+J2 = 20 × M
+J3 = 50 × M
+J4 = 100 × M
+J5 = 250 × M
 
----
+Genesis:
 
-# 10. Prize Denomination
+5,000 / 10,000 / 25,000 / 50,000 / 125,000 USDM
 
-The payout is conceptually denominated in USDM.
+Class-100 maturity:
 
-This provides a stable reference unit even when the actual settlement uses:
+500,000 / 1,000,000 / 2,500,000 / 5,000,000 / 12,500,000 USDM
 
-* USDM;
-* ADA;
-* PRE;
-* or an approved combination.
+The Jackpot ladder must not alter normal five-symbol probabilities.
 
-Therefore the protocol can state:
+12. Jackpot Funding
 
-> **Prize: 200 USDM**
+Jackpot liquidity may be funded only from genuine residual surplus after mandatory obligations and protected capital.
 
-while the actual transaction may deliver the equivalent amount in another supported asset.
+There is no frozen JackpotAllocationRate.
 
-The conversion used for settlement must follow the protocol's verified price-feed rules.
+The implementation must not hard-code or present an allocation percentage as canonical until a separate normative policy decision adopts it.
 
----
+Any Jackpot funding transition must preserve:
 
-# 11. Prize Floor
+JackpotPayout <= LockedJackpotLiquidity
 
-Every valid winning ticket has an absolute minimum prize of:
+and the Effective Pool invariant.
 
-## **2 USDM**
+13. Jackpot Activation and Payout
 
-Conceptually:
+Activation requires:
 
-```text
-payout = max(calculatedPrize, 2 USDM)
-```
+LockedJackpotLiquidity >= Target(level)
 
-However, the floor does not override solvency.
+and a valid post-transition economic state.
 
-The protocol must never create an economically impossible obligation merely because the nominal minimum is 2 USDM.
+Selection must use cryptographically verifiable randomness.
 
-Therefore:
+At payout:
 
-> The prize floor applies subject to the protocol's solvency rules.
+derive the winning condition;
 
----
+freeze the actual payout;
 
-# 12. Prize Crystallization
+remove the paid amount from locked Jackpot accounting exactly once;
 
-A prize becomes fixed at reveal.
+create the corresponding pending liability;
 
-For a winning ticket:
+settle/claim under normal single-claim rules;
 
-```text
-UNREVEALED
-     ↓
-REVEALED WIN
-     ↓
-TIER FIXED
-     ↓
-PAYOUT FIXED
-     ↓
-CLAIMABLE
-```
+rebuild the Jackpot only from future genuine surplus.
 
-After crystallization:
+The policy choice between threshold payout and full current locked-balance payout is explicitly open. The validator must not silently encode one as if it were already frozen.
 
-* the payout cannot increase;
-* the payout cannot decrease;
-* changes in the PrizePool do not retroactively change it;
-* later Treasury operations do not change it;
-* the age of the ticket does not change it.
+14. Multi-Asset Payment and Settlement
 
-A player who claims immediately and a player who claims shortly before expiry must receive the same crystallized prize, assuming both claims are valid and within the economic claim period.
+USDM remains the reference economic value.
 
----
+For non-USDM payment or settlement, the implementation must validate:
 
-# 13. Jackpot Economy
+asset identity;
 
-The jackpot is economically separate from the five normal symbols.
+price validity;
 
-The jackpot has its own symbol.
+freshness;
 
-Its activation is determined automatically from the PrizePool state.
+decimal precision;
 
-Conceptually:
+deterministic rounding;
 
-```text
-effectivePool >= jackpotThreshold
-        ↓
-JACKPOT ACTIVE
-```
+minimum-UTxO constraints;
 
-No administrator may manually activate the jackpot.
+stale/malformed oracle rejection.
 
-No backend may assign the jackpot to a selected ticket.
+A frozen USDM prize must retain the same economic value when settled in another approved asset.
 
-The ticket receiving the jackpot must be selected through the protocol's cryptographic randomness.
+The implementation must never assume that a USDM integer can simply be copied into lovelace.
 
-The jackpot must not alter the normal distribution of symbols 1, 2, 3, 4 and 5.
+15. Reveal and Crystallisation
 
----
+Reveal must:
 
-# 14. Jackpot and PrizePool Growth
+validate commitment;
 
-The economic purpose of the jackpot threshold is to make jackpot activation dependent on actual protocol liquidity rather than on an operator decision.
+validate the applicable randomness/beacon state;
 
-As effective liquidity grows, the protocol can automatically enter the jackpot-active state once the configured threshold is reached.
+derive the game result;
 
-Conversely, the economic accounting must not treat committed liabilities as available liquidity merely because they remain physically present in a UTxO.
+derive normal tier or Jackpot result;
 
-The relevant quantity is therefore:
+read current economic state;
 
-> **effectivePool, not gross pool balance.**
+verify economic capacity;
 
----
+release unresolved exposure;
 
-# 15. Unresolved Tickets
+create/update pending liability;
 
-Unrevealed tickets represent unresolved economic states.
+bind the ticket to the immutable result and payout.
 
-The protocol must account for this uncertainty when determining effective liquidity.
+A crystallised payout must never be recalculated during claim.
 
-The economic model therefore reserves an amount for unresolved tickets according to the defined protocol rules.
+16. Claim
 
-This prevents the protocol from treating every unrevealed ticket as though it had already been proven to be a loss.
+A valid claim requires current ownership and the required authorization/signature.
 
-The exact reserve mechanism must be deterministic and enforceable on-chain.
+Claim must:
 
----
+pay the frozen economic value;
 
-# 16. Ticket Expiry
+reduce pending liabilities exactly once;
 
-The initial ticket economic lifetime is:
+prevent a second claim;
 
-## **365 days minimum**
+preserve the NFT unless the owner voluntarily burns it.
 
-Conceptually:
-
-```text
-expiresAt = issuedAt + 365 days
-```
-
-Expiry primarily terminates the economic right associated with an unclaimed winning ticket.
-
-Expiry does not necessarily require destruction of the NFT.
-
----
-
-# 17. Reveal After Expiry
-
-The protocol may permit historical reveal after expiry.
-
-In that case:
-
-```text
-EXPIRED
-   ↓
-REVEAL
-   ↓
-WIN / LOSS
-```
-
-If the expired ticket would have been a winner, the historical result may still be recorded.
-
-The interface may display:
-
-> Historical win: X USDM
-> Status: EXPIRED
-
-However:
-
-> An expired winning ticket has no remaining economic claim.
-
-This preserves the historical and collectible value of the NFT without creating an indefinite financial liability.
-
----
-
-# 18. Claim
-
-A winning prize may be claimed exactly once.
-
-The economic state transition is:
-
-```text
-CLAIMABLE → CLAIMED
-```
-
-Once claimed, the same economic right cannot be claimed again.
-
-The NFT itself is not automatically destroyed.
-
-This distinction is fundamental:
-
-```text
 CLAIM ≠ BURN
-```
 
----
+17. Expiry
 
-# 19. Collectible Winning Tickets
+The implementation must enforce these semantics:
 
-A winning ticket may remain in existence after its prize has been claimed.
+claimBeforeExpiry = true
 
-For example:
+for a valid economic claim.
 
-```text
-Ticket #123
-Status: CLAIMED
-Historical Prize: 10,000 USDM
-```
+After expiresAt:
 
-The ticket can therefore retain:
+no claim may be created;
 
-* its ticket identity;
-* its result;
-* its historical prize;
-* its tier;
-* jackpot status, where applicable;
-* and collectible value.
+no new liability may be created;
 
-The protocol does not require valuable winning NFTs to be destroyed merely because their economic claim has been exercised.
+unresolved reserve is released exactly once;
 
----
+expired winning economic rights are dissolved exactly once;
 
-# 20. Voluntary Burn
+a historical late reveal may be recorded where the protocol permits it;
 
-The ticket owner may voluntarily burn the NFT.
+late reveal must not recreate claimability or economic liability.
 
-Burning provides:
+The exact ticket lifetime is not frozen as a constitutional constant in this baseline. Do not encode 365 days as if it were already a final economic parameter.
 
-* no additional prize;
-* no refund;
-* no economic bonus.
+18. Secondary Market
 
-The valid economic choices are therefore:
-
-```text
-CLAIM + KEEP NFT
-```
-
-or
-
-```text
-CLAIM + BURN NFT
-```
-
-The protocol must prevent a winning economic right from being accidentally destroyed before it has been properly handled.
-
----
-
-# 21. Secondary Market
-
-Tickets are transferable from the beginning.
-
-This creates a native secondary market.
-
-An unrevealed ticket may move through multiple owners:
-
-```text
-Alice → Bob → Charlie → Reveal
-```
-
-The final owner receives the economic right.
-
-A revealed winning ticket may also be transferable before claim, where the protocol permits it:
-
-```text
-Alice reveals Ticket #123
-        ↓
-Ticket wins 10,000 USDM
-        ↓
-Alice transfers Ticket #123 to Bob
-        ↓
-Bob claims 10,000 USDM
-```
-
-The prize is attached to the ticket, not to the wallet that originally purchased it.
-
----
-
-# 22. Privacy of Economic State
-
-Before reveal, the public blockchain must not expose information that allows the economic result to be inferred.
-
-The constitutional privacy requirement is:
-
-> **“Nessuna informazione pubblicamente disponibile prima del reveal di un ticket deve consentire di determinare o dedurre in modo significativo il simbolo, il tier, il premio o l'eventuale jackpot associato a quel ticket.”**
-
-This includes information contained in:
-
-* the ticket asset;
-* datum;
-* redeemer;
-* transaction structure;
-* public blockchain history;
-* configuration references;
-* and other publicly available protocol data.
-
-All unrevealed tickets must therefore present the same economic privacy model.
-
----
-
-# 23. Governance
-
-Governance may modify economic and operational parameters within constitutional limits.
-
-Potentially configurable parameters include, where explicitly permitted by the Constitution:
-
-* Treasury allocation percentages;
-* PrizePool allocation;
-* jackpot threshold;
-* economic reserve parameters;
-* other operational economic parameters.
-
-Governance must not be able to transform PRE-RICH into a system contrary to its constitutional principles.
-
-In particular, governance must not be used to introduce:
-
-* team/developer extraction;
-* discretionary prize assignment;
-* discretionary jackpot assignment;
-* discretionary winner selection;
-* arbitrary claim rejection;
-* centralized custody of player funds;
-* or other mechanisms incompatible with the protocol's trustless philosophy.
-
-Governance controls parameters.
-
-Governance does not become the economic authority of individual games.
-
----
-
-# 24. No Fiduciary Backend
-
-The backend may facilitate the economic system.
-
-It may:
-
-* construct transactions;
-* monitor the blockchain;
-* index tickets;
-* notify users;
-* facilitate reveal;
-* facilitate claims;
-* act as a relayer.
-
-It may not decide:
-
-* prize amount;
-* winner;
-* tier;
-* jackpot activation;
-* jackpot recipient;
-* Treasury entitlement;
-* claim validity.
-
-The backend is infrastructure.
-
-It is not a fiduciary authority.
-
----
-
-# 25. Economic Security Invariants
-
-The following properties are normative.
-
-### E1 — No personal beneficiary
-
-No protocol revenue is assigned to team, developer, founder or administrator wallets as a personal entitlement.
-
-### E2 — Treasury custody
-
-Protocol revenue enters the on-chain Treasury according to the defined payment rules.
-
-### E3 — PrizePool accounting
-
-Effective liquidity accounts for existing economic obligations.
-
-### E4 — Deterministic payout
-
-A payout is determined by protocol rules and verified on-chain.
-
-### E5 — Crystallization
-
-A winning payout becomes fixed at reveal.
-
-### E6 — Solvency
-
-The protocol must not treat committed liabilities as freely available liquidity.
-
-### E7 — Prize floor
-
-A valid winning prize has a minimum reference value of 2 USDM, subject to solvency rules.
-
-### E8 — Jackpot autonomy
-
-Jackpot activation and assignment cannot be controlled by an administrator.
-
-### E9 — Transferability
+Transfer must preserve ticket identity, commitment, round and game configuration.
 
 The economic right follows the ticket.
 
-### E10 — Single claim
+A revealed but unclaimed winning ticket may be transferable where the protocol permits it; the frozen payout remains attached to the ticket.
 
-A winning economic right can be claimed only once.
+Transfer must never duplicate the economic claim.
 
-### E11 — No forced burn
+19. NFT Retention
 
-Claim does not require NFT destruction.
+Claiming does not require burning.
 
-### E12 — Expiry
+A claimed ticket may remain a historical collectible.
 
-The economic right expires after the defined claim period.
+Burning is voluntary and gives no refund, bonus or additional economic right.
 
-### E13 — Pre-reveal privacy
+20. Atomic Sale Requirement
 
-Public information before reveal must not significantly determine or expose the economic outcome.
+The B1 sale transition must economically bind:
 
-### E14 — Governance limitation
+ticket mint
++
+Treasury payment
++
+PrizePool unresolved-ticket reservation
 
-Governance cannot override constitutional economic principles.
+A ticket must not be considered economically issued when payment or required reservation is absent.
 
-### E15 — No fiduciary backend
+Off-chain bookkeeping cannot replace on-chain enforcement.
 
-Off-chain infrastructure cannot become the economic decision-maker.
+21. Treasury → PrizePool
 
----
+Treasury funding must target the configured PrizePool script and preserve all mandatory accounting constraints.
 
-# 26. Example — Basic Game
+No personal operator wallet may be used as a required economic intermediate.
 
-Assume:
+22. Operational OPEX and Beacon Observation
 
-```text
-Ticket price: 2 USDM
-```
+Maintenance is an accounting category, not an automatic operator entitlement.
 
-A player purchases one ticket.
+Operational modes:
 
-The payment enters the protocol Treasury.
+SLEEP      = no relevant protocol event pending
+ACTIVE     = protocol-relevant event requires observation/construction
+QUIESCENT  = event completed, waiting for next trigger
 
-The Treasury subsequently allocates funds according to the configured percentages.
+Recovery may restore liveness or resubmit objectively valid evidence but cannot change:
 
-The ticket remains unrevealed.
+ticket outcomes;
 
-At this point the public blockchain must not reveal its symbol, tier, prize or jackpot status.
+economic rights;
 
-The player then initiates reveal.
+Beacon selection;
 
-The protocol verifies the randomness inputs and derives the game result.
+payout values;
 
-The result determines the tier.
+protocol truth.
 
-The protocol calculates the effective liquidity.
+B1 may use an authorized Beacon publisher/relayer. B3 proof-path behavior is not to be assumed implemented.
 
-The payout is calculated and crystallized.
+23. Governance Boundary
 
-The ticket becomes either:
+Governance may modify bounded parameters where constitutionally allowed.
 
-```text
-REVEALED LOSS
-```
+Governance may not:
 
-or:
+assign winners;
 
-```text
-REVEALED WIN
-PAYOUT = X USDM
-CLAIMABLE
-```
+assign Jackpot recipients;
 
-No operator is involved in deciding the outcome.
+alter crystallised payouts;
 
----
+bypass solvency for a specific transaction;
 
-# 27. Example — PrizePool with Existing Liabilities
+create privileged personal Treasury claims.
 
-Assume:
+24. Conformance Requirements
 
-```text
-TOTAL POOL                    100,000 USDM
-PENDING WINNING LIABILITIES    20,000 USDM
-UNRESOLVED-TICKET RESERVE      10,000 USDM
---------------------------------------------
-EFFECTIVE POOL                 70,000 USDM
-```
+A requirement is not considered implemented merely because this document describes it.
 
-The protocol must use the effective pool for calculations that depend on available liquidity.
+Conformance requires agreement among:
 
-It must not treat the full 100,000 USDM as freely available.
+Constitution;
 
-After a new winning ticket is revealed and its payout is crystallized, that new obligation becomes part of the protocol's liability accounting.
+docs/Game-Economy.md;
 
----
+this specification;
 
-# 28. Economic Lifecycle
+Plutus validator enforcement;
 
-The complete economic lifecycle is:
+off-chain transaction construction;
 
-```text
-                  ┌──────────────┐
-                  │    PLAYER    │
-                  └──────┬───────┘
-                         │
-                         ▼
-                  ┌──────────────┐
-                  │    TICKET    │
-                  │    2 USDM    │
-                  └──────┬───────┘
-                         │
-                         ▼
-                  ┌──────────────┐
-                  │   TREASURY   │
-                  └──────┬───────┘
-                         │
-              ┌──────────┼──────────┐
-              ▼          ▼          ▼
-        ┌──────────┐ ┌───────┐ ┌─────────┐
-        │ PrizePool│ │ Stake │ │ Reserve │
-        └────┬─────┘ └───────┘ └─────────┘
-             │
-             ▼
-       Effective Pool
-             │
-             ▼
-          REVEAL
-             │
-             ▼
-       Result / Tier
-             │
-             ▼
-          PAYOUT
-             │
-             ▼
-         CLAIMABLE
-             │
-             ▼
-          CLAIMED
-             │
-             ▼
-       Keep NFT / Burn
-```
+UI/quote behavior where relevant;
 
----
+positive tests;
 
-# 29. Constitutional Boundary
+negative/adversarial tests;
 
-The economic model exists to make the game sustainable while preserving the fundamental PRE-RICH philosophy.
+generated artifacts;
 
-Economic optimization must never become an excuse to introduce trusted economic actors.
+no contradictory legacy rule.
 
-The protocol may evolve its parameters.
+Simulation or reference-model output is not on-chain proof.
 
-It may not abandon its principles.
+25. Implementation Order
 
-The fundamental rule is:
+Recommended order:
 
-> **The protocol determines economic rights through verifiable rules; people may participate in the protocol, but no privileged person may decide who deserves the money.**
+freeze/adopt any remaining policy parameters;
 
----
+implement class-aware deterministic exposure;
 
-# 30. Implementation Requirement
+implement state-derived class activation/suspension;
 
-Every economic statement in this document must eventually correspond to:
+implement HighestClassEverActivated;
 
-```text
-CONSTITUTION
-      ↓
-ECONOMIC SPECIFICATION
-      ↓
-PLUTUS VALIDATOR
-      ↓
-OFF-CHAIN IMPLEMENTATION
-      ↓
-TEST
-      ↓
-AUDITABLE INVARIANT
-```
+implement Jackpot accounting and payout transition;
 
-A feature is not considered implemented merely because the frontend displays it or because an off-chain component follows the intended behavior.
+implement dynamic USDM/ADA payment and settlement;
 
-For an economic invariant to be considered trustless, the relevant property must be **enforced or cryptographically verified on-chain**.
+implement reveal/claim/expiry conformance;
 
-The implementation must not replace a specified invariant with an approximate or operationally equivalent mechanism.
+test Treasury, PrizePool and liability accounting;
 
----
+run adversarial and integration suites;
 
-## Status
+update predeploy/release gates;
 
-This document defines the intended **PRE-RICH B1 economic model**.
+update documentation only when implementation truth changes.
 
-It does not by itself certify that the current implementation satisfies every requirement.
+No implementation change is complete while this specification and Game-Economy.md disagree.
 
-Implementation compliance must be demonstrated independently through code inspection, validator analysis and adversarial tests.
+Economic policy status: SEMANTICALLY CLOSED / NORMATIVE
+Implementation status: CONFORMANCE OPEN
+Explicitly not frozen: exact Jackpot payout policy, exact expiry duration, exact numerical hysteresis thresholds, future Jackpot allocation rate.

@@ -13,15 +13,29 @@
  * PrizeValidator:
  *   ScriptHash registry
  *   -> PrizeTable
+ *   -> Oracle State singleton identity
  *   -> PubKeyHash oraclePublisher
  *
  * B1PrizePool:
  *   ScriptHash prize
+ *   -> Oracle State singleton identity
  *   -> PubKeyHash oraclePublisher
+ *   -> pool token policy
+ *   -> pool token name
  *
- * Nessuna dipendenza circolare tra PrizeValidator e B1PrizePool:
- * il PrizeValidator usa pdPrizePoolHash dal PrizeDatum;
- * il B1PrizePool riceve direttamente il prizeHash del PrizeValidator.
+ * Treasury:
+ *   script senza parametri
+ *
+ * Nessuna dipendenza circolare:
+ *
+ *   Counter ----------------------\
+ *   BeaconRegistry ---------------> MintPolicy
+ *   PrizeValidator -> PrizeHash --/
+ *   B1PrizePool -> PoolHash ------/
+ *   TreasuryHash ----------------/
+ *
+ * PrizeValidator non riceve il PoolHash:
+ * utilizza il pdPrizePoolHash già presente nel PrizeDatum.
  */
 
 import {
@@ -39,7 +53,13 @@ import b1PrizePoolFactoryJson from './plutusScripts/b1PrizePoolFactory.plutus.js
 import beaconRegistryJson from './plutusScripts/beaconRegistry.plutus.json'
 
 import { defaultPrizeTable, type PrizeTable } from './gameRules'
-import { B1_POOL_TOKEN_POLICY_ID, B1_POOL_TOKEN_NAME_HEX } from './config'
+
+import {
+  B1_POOL_TOKEN_POLICY_ID,
+  B1_POOL_TOKEN_NAME_HEX,
+  ORACLE_STATE_POLICY_ID,
+  ORACLE_STATE_TOKEN_NAME_HEX,
+} from './config'
 
 type ScriptEnvelope = {
   type: string
@@ -54,36 +74,80 @@ function toLucidScript(env: ScriptEnvelope): Script {
   }
 }
 
-const treasuryEnv = treasuryJson as ScriptEnvelope
-const prizeFactoryEnv = prizeValidatorFactoryJson as ScriptEnvelope
-const counterEnv = counterValidatorJson as ScriptEnvelope
-const mintFactoryEnv = mintPolicyFactoryJson as ScriptEnvelope
-const b1PrizePoolFactoryEnv = b1PrizePoolFactoryJson as ScriptEnvelope
-const beaconRegistryEnv = beaconRegistryJson as ScriptEnvelope
+const treasuryEnv =
+  treasuryJson as ScriptEnvelope
 
-/** Script senza parametri */
-export const treasuryValidator = toLucidScript(treasuryEnv)
-export const counterValidator = toLucidScript(counterEnv)
-export const beaconRegistryValidator = toLucidScript(beaconRegistryEnv)
+const prizeFactoryEnv =
+  prizeValidatorFactoryJson as ScriptEnvelope
 
-/** Factory grezze */
-export const mintPolicyFactory = toLucidScript(mintFactoryEnv)
-export const prizeValidatorFactory = toLucidScript(prizeFactoryEnv)
-export const b1PrizePoolFactory = toLucidScript(b1PrizePoolFactoryEnv)
+const counterEnv =
+  counterValidatorJson as ScriptEnvelope
+
+const mintFactoryEnv =
+  mintPolicyFactoryJson as ScriptEnvelope
+
+const b1PrizePoolFactoryEnv =
+  b1PrizePoolFactoryJson as ScriptEnvelope
+
+const beaconRegistryEnv =
+  beaconRegistryJson as ScriptEnvelope
+
+// ============================================================
+// Unparameterized scripts
+// ============================================================
+
+export const treasuryValidator =
+  toLucidScript(treasuryEnv)
+
+export const counterValidator =
+  toLucidScript(counterEnv)
+
+export const beaconRegistryValidator =
+  toLucidScript(beaconRegistryEnv)
+
+// ============================================================
+// Raw factories
+// ============================================================
+
+export const mintPolicyFactory =
+  toLucidScript(mintFactoryEnv)
+
+export const prizeValidatorFactory =
+  toLucidScript(prizeFactoryEnv)
+
+export const b1PrizePoolFactory =
+  toLucidScript(b1PrizePoolFactoryEnv)
+
+// ============================================================
+// Backward-compatible aliases
+// ============================================================
 
 /**
  * @deprecated Preferisci buildMintPolicy(...).
  */
-export const mintPolicyScript = mintPolicyFactory
+export const mintPolicyScript =
+  mintPolicyFactory
 
 /**
  * @deprecated Preferisci buildPrizeValidator(...).
  */
-export const prizeValidator = prizeValidatorFactory
+export const prizeValidator =
+  prizeValidatorFactory
+
+// ============================================================
+// PrizeTable conversion
+// ============================================================
 
 /**
  * PrizeTable Plutus:
- * Constr 0 [tier1, tier2, tier3, tier4, tier5]
+ *
+ *   Constr 0
+ *     [ tier1
+ *     , tier2
+ *     , tier3
+ *     , tier4
+ *     , tier5
+ *     ]
  */
 export function prizeTableToData(
   table: PrizeTable = defaultPrizeTable,
@@ -97,15 +161,28 @@ export function prizeTableToData(
   ])
 }
 
+// ============================================================
+// MintPolicy
+// ============================================================
+
 /**
- * Applica i 5 parametri alla MintPolicy factory.
+ * Applica i 7 parametri alla MintPolicy factory.
  *
  * Ordine:
+ *
  *   1. counterHash
  *   2. prizeHash
  *   3. registryHash
  *   4. treasuryHash
  *   5. b1PrizePoolHash
+ *   6. Oracle State singleton identity
+ *   7. oraclePublisher
+ *
+ * C-02:
+ * la MintPolicy riceve sia TreasuryHash sia B1PrizePoolHash
+ * così può verificare on-chain che il mint del Ticket sia
+ * accompagnato dal pagamento Treasury e dalla reservation
+ * del PrizePool nella stessa transazione.
  */
 export function buildMintPolicy(
   counterScriptHashHex: string,
@@ -113,14 +190,27 @@ export function buildMintPolicy(
   registryScriptHashHex: string,
   treasuryScriptHashHex: string,
   b1PrizePoolScriptHashHex: string,
+  oracleStatePolicyId: string = ORACLE_STATE_POLICY_ID,
+  oracleStateTokenNameHex: string = ORACLE_STATE_TOKEN_NAME_HEX,
+  oraclePublisherPkhHex: string,
 ): Script {
-  const applied = applyParamsToScript(mintFactoryEnv.cborHex, [
-    counterScriptHashHex,
-    prizeScriptHashHex,
-    registryScriptHashHex,
-    treasuryScriptHashHex,
-    b1PrizePoolScriptHashHex,
-  ])
+  if (!oracleStatePolicyId || !oracleStateTokenNameHex) {
+    throw new Error('Oracle State singleton token is not configured')
+  }
+
+  const applied =
+    applyParamsToScript(
+      mintFactoryEnv.cborHex,
+      [
+        counterScriptHashHex,
+        prizeScriptHashHex,
+        registryScriptHashHex,
+        treasuryScriptHashHex,
+        b1PrizePoolScriptHashHex,
+        new Constr(0, [oracleStatePolicyId, oracleStateTokenNameHex]),
+        oraclePublisherPkhHex,
+      ],
+    )
 
   return {
     type: 'PlutusV2',
@@ -128,26 +218,44 @@ export function buildMintPolicy(
   }
 }
 
+// ============================================================
+// PrizeValidator
+// ============================================================
+
 /**
- * Applica i 3 parametri alla PrizeValidator factory.
+ * Applica i 4 parametri alla PrizeValidator factory.
  *
  * Ordine:
+ *
  *   1. registryHash
  *   2. PrizeTable
- *   3. oraclePublisher
+ *   3. Oracle State singleton policy
+ *   4. Oracle State singleton name
+ *   5. oraclePublisher
  *
  * NON riceve b1PrizePoolHash.
  */
 export function buildPrizeValidator(
   registryScriptHashHex: string,
   table: PrizeTable = defaultPrizeTable,
+  oracleStatePolicyId: string = ORACLE_STATE_POLICY_ID,
+  oracleStateTokenNameHex: string = ORACLE_STATE_TOKEN_NAME_HEX,
   oraclePublisherPkhHex: string,
 ): Script {
-  const applied = applyParamsToScript(prizeFactoryEnv.cborHex, [
-    registryScriptHashHex,
-    prizeTableToData(table),
-    oraclePublisherPkhHex,
-  ])
+  if (!oracleStatePolicyId || !oracleStateTokenNameHex) {
+    throw new Error('Oracle State singleton token is not configured')
+  }
+
+  const applied =
+    applyParamsToScript(
+      prizeFactoryEnv.cborHex,
+      [
+        registryScriptHashHex,
+        prizeTableToData(table),
+        new Constr(0, [oracleStatePolicyId, oracleStateTokenNameHex]),
+        oraclePublisherPkhHex,
+      ],
+    )
 
   return {
     type: 'PlutusV2',
@@ -155,28 +263,53 @@ export function buildPrizeValidator(
   }
 }
 
+// ============================================================
+// B1PrizePool
+// ============================================================
+
 /**
- * Applica i 2 parametri alla B1PrizePool factory.
+ * Applica i 5 parametri alla B1PrizePool factory.
  *
  * Ordine:
+ *
  *   1. prizeHash
- *   2. oraclePublisher
+ *   2. Oracle State singleton policy
+ *   3. Oracle State singleton name
+ *   4. oraclePublisher
+ *   5. poolTokenPolicyId
+ *   6. poolTokenNameHex
  */
 export function buildB1PrizePool(
   prizeScriptHashHex: string,
   oraclePublisherPkhHex: string,
-  poolTokenPolicyId: string = B1_POOL_TOKEN_POLICY_ID,
-  poolTokenNameHex: string = B1_POOL_TOKEN_NAME_HEX,
+  oracleStatePolicyId: string = ORACLE_STATE_POLICY_ID,
+  oracleStateTokenNameHex: string = ORACLE_STATE_TOKEN_NAME_HEX,
+  poolTokenPolicyId: string =
+    B1_POOL_TOKEN_POLICY_ID,
+  poolTokenNameHex: string =
+    B1_POOL_TOKEN_NAME_HEX,
 ): Script {
-  if (!poolTokenPolicyId || !poolTokenNameHex) {
-    throw new Error('B1PrizePool singleton token is not configured')
+  if (!oracleStatePolicyId || !oracleStateTokenNameHex) {
+    throw new Error('Oracle State singleton token is not configured')
   }
-  const applied = applyParamsToScript(b1PrizePoolFactoryEnv.cborHex, [
-    prizeScriptHashHex,
-    oraclePublisherPkhHex,
-    poolTokenPolicyId,
-    poolTokenNameHex,
-  ])
+
+  if (!poolTokenPolicyId || !poolTokenNameHex) {
+    throw new Error(
+      'B1PrizePool singleton token is not configured',
+    )
+  }
+
+  const applied =
+    applyParamsToScript(
+      b1PrizePoolFactoryEnv.cborHex,
+      [
+        prizeScriptHashHex,
+        new Constr(0, [oracleStatePolicyId, oracleStateTokenNameHex]),
+        oraclePublisherPkhHex,
+        poolTokenPolicyId,
+        poolTokenNameHex,
+      ],
+    )
 
   return {
     type: 'PlutusV2',
@@ -184,62 +317,116 @@ export function buildB1PrizePool(
   }
 }
 
+// ============================================================
+// Full script topology
+// ============================================================
+
 /**
  * Costruisce tutti gli script parametrizzati.
  *
- * Nessun fixed-point iteration.
+ * Non usa fixed-point iteration.
  *
  * Ordine:
- *   1. hash CounterValidator
- *   2. hash BeaconRegistryValidator
+ *
+ *   1. CounterValidator
+ *   2. BeaconRegistryValidator
  *   3. PrizeValidator(registryHash, PrizeTable, oraclePublisher)
  *   4. hash PrizeValidator
- *   5. B1PrizePool(prizeHash, oraclePublisher)
+ *   5. B1PrizePool(prizeHash, oraclePublisher, pool token)
  *   6. hash B1PrizePool
- *   7. MintPolicy(counterHash, prizeHash, registryHash, treasuryHash, b1PrizePoolHash)
+ *   7. hash Treasury
+ *   8. MintPolicy(
+ *        counterHash,
+ *        prizeHash,
+ *        registryHash,
+ *        treasuryHash,
+ *        b1PrizePoolHash
+ *      )
  */
 export function buildScriptsFromLucid(
   lucid: {
     utils: {
-      validatorToScriptHash: (script: Script) => string
-      mintingPolicyToId?: (script: Script) => string
-      validatorToAddress?: (script: Script) => string
+      validatorToScriptHash: (
+        script: Script,
+      ) => string
+
+      mintingPolicyToId?: (
+        script: Script,
+      ) => string
+
+      validatorToAddress?: (
+        script: Script,
+      ) => string
     }
   },
   table: PrizeTable = defaultPrizeTable,
   oraclePublisherPkh: string = '',
-  poolTokenPolicyId: string = B1_POOL_TOKEN_POLICY_ID,
-  poolTokenNameHex: string = B1_POOL_TOKEN_NAME_HEX,
+  oracleStatePolicyId: string = ORACLE_STATE_POLICY_ID,
+  oracleStateTokenNameHex: string = ORACLE_STATE_TOKEN_NAME_HEX,
+  poolTokenPolicyId: string =
+    B1_POOL_TOKEN_POLICY_ID,
+  poolTokenNameHex: string =
+    B1_POOL_TOKEN_NAME_HEX,
 ) {
+  // ----------------------------------------------------------
+  // 1. Static validators
+  // ----------------------------------------------------------
+
   const counterHash =
-    lucid.utils.validatorToScriptHash(counterValidator)
+    lucid.utils.validatorToScriptHash(
+      counterValidator,
+    )
 
   const registryHash =
-    lucid.utils.validatorToScriptHash(beaconRegistryValidator)
+    lucid.utils.validatorToScriptHash(
+      beaconRegistryValidator,
+    )
+
+  const treasuryHash =
+    lucid.utils.validatorToScriptHash(
+      treasuryValidator,
+    )
+
+  // ----------------------------------------------------------
+  // 2. PrizeValidator
+  // ----------------------------------------------------------
 
   const prizeValidator =
     buildPrizeValidator(
       registryHash,
       table,
+      oracleStatePolicyId,
+      oracleStateTokenNameHex,
       oraclePublisherPkh,
     )
 
   const prizeHash =
-    lucid.utils.validatorToScriptHash(prizeValidator)
+    lucid.utils.validatorToScriptHash(
+      prizeValidator,
+    )
+
+  // ----------------------------------------------------------
+  // 3. B1PrizePool
+  // ----------------------------------------------------------
 
   const b1PrizePool =
     buildB1PrizePool(
       prizeHash,
       oraclePublisherPkh,
+      oracleStatePolicyId,
+      oracleStateTokenNameHex,
       poolTokenPolicyId,
       poolTokenNameHex,
     )
 
   const b1PrizePoolHash =
-    lucid.utils.validatorToScriptHash(b1PrizePool)
+    lucid.utils.validatorToScriptHash(
+      b1PrizePool,
+    )
 
-  const treasuryHash =
-    lucid.utils.validatorToScriptHash(treasuryValidator)
+  // ----------------------------------------------------------
+  // 4. MintPolicy
+  // ----------------------------------------------------------
 
   const mintPolicy =
     buildMintPolicy(
@@ -248,32 +435,67 @@ export function buildScriptsFromLucid(
       registryHash,
       treasuryHash,
       b1PrizePoolHash,
+      oracleStatePolicyId,
+      oracleStateTokenNameHex,
+      oraclePublisherPkh,
     )
 
   const ticketPolicyId =
     typeof lucid.utils.mintingPolicyToId === 'function'
-      ? lucid.utils.mintingPolicyToId(mintPolicy)
-      : lucid.utils.validatorToScriptHash(mintPolicy)
+      ? lucid.utils.mintingPolicyToId(
+          mintPolicy,
+        )
+      : lucid.utils.validatorToScriptHash(
+          mintPolicy,
+        )
+
+  // ----------------------------------------------------------
+  // 5. Addresses
+  // ----------------------------------------------------------
 
   const counterAddress =
-    typeof lucid.utils.validatorToAddress === 'function'
-      ? lucid.utils.validatorToAddress(counterValidator)
+    typeof lucid.utils.validatorToAddress ===
+      'function'
+      ? lucid.utils.validatorToAddress(
+          counterValidator,
+        )
       : undefined
 
   const registryAddress =
-    typeof lucid.utils.validatorToAddress === 'function'
-      ? lucid.utils.validatorToAddress(beaconRegistryValidator)
+    typeof lucid.utils.validatorToAddress ===
+      'function'
+      ? lucid.utils.validatorToAddress(
+          beaconRegistryValidator,
+        )
+      : undefined
+
+  const treasuryAddress =
+    typeof lucid.utils.validatorToAddress ===
+      'function'
+      ? lucid.utils.validatorToAddress(
+          treasuryValidator,
+        )
       : undefined
 
   const prizeAddress =
-    typeof lucid.utils.validatorToAddress === 'function'
-      ? lucid.utils.validatorToAddress(prizeValidator)
+    typeof lucid.utils.validatorToAddress ===
+      'function'
+      ? lucid.utils.validatorToAddress(
+          prizeValidator,
+        )
       : undefined
 
   const b1PrizePoolAddress =
-    typeof lucid.utils.validatorToAddress === 'function'
-      ? lucid.utils.validatorToAddress(b1PrizePool)
+    typeof lucid.utils.validatorToAddress ===
+      'function'
+      ? lucid.utils.validatorToAddress(
+          b1PrizePool,
+        )
       : undefined
+
+  // ----------------------------------------------------------
+  // 6. Return complete topology
+  // ----------------------------------------------------------
 
   return {
     counterHash,
@@ -290,10 +512,15 @@ export function buildScriptsFromLucid(
 
     counterAddress,
     registryAddress,
+    treasuryAddress,
     prizeAddress,
     b1PrizePoolAddress,
   }
 }
+
+// ============================================================
+// Default export
+// ============================================================
 
 export default {
   treasuryValidator,
@@ -308,5 +535,6 @@ export default {
   buildPrizeValidator,
   buildB1PrizePool,
   buildScriptsFromLucid,
+
   prizeTableToData,
 }

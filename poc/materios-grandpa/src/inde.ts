@@ -4,3 +4,4 @@ export * from "./authority.js";
 export * from "./grandpa.js";
 export * from "./ancestry.js";
 export * from "./verifier.js";
+export * from "./authority-transition.js";

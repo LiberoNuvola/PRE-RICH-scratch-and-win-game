@@ -19,6 +19,8 @@ import wallet from './wallet'
 
 import { buildScriptsFromLucid } from './loadValidator'
 
+import { ORACLE_PUBLISHER_PKH } from './config'
+
 import {
   deriveBeacon,
   deriveTicketSeed,
@@ -179,8 +181,9 @@ function claimRedeemer(): Data {
 }
 
 /** B1PrizePool actions: FundTreasury=0, TicketIssued=1, TicketRevealed=2, TicketClaimed=3, TicketExpired=4 */
-function b1ppTicketRevealedRedeemer(reserveRelease: bigint, payout: bigint): Data {
-  return constr(2, [reserveRelease, payout])
+
+function b1ppTicketRevealedRedeemer(priceUsdm: bigint): Data {
+  return constr(2, [priceUsdm])
 }
 
 function b1ppTicketClaimedRedeemer(claimedAmount: bigint): Data {
@@ -195,11 +198,11 @@ function b1ppTicketClaimedRedeemer(claimedAmount: bigint): Data {
  *  0  pdTicketPolicy
  *  1  pdTicketName
  *  2  pdPlayerCommitment
- *  3  pdPriceUsdm
+ *  3  pdPriceUsdm          (USDM sub-units: 100 = 1 USDM)
  *  4  pdCommitment
  *  5  pdGameVersion
  *  6  pdTicketNonce
- *  7  pdPrizeAmount
+ *  7  pdPrizeAmount         (USDM sub-units: crystallised payout)
  *  8  pdPaymentPolicy
  *  9  pdPaymentName
  * 10  pdStatus
@@ -210,8 +213,9 @@ function b1ppTicketClaimedRedeemer(claimedAmount: bigint): Data {
  * 15  pdBeaconValue
  * 16  pdMcHash
  * 17  pdMateriosContext
- * 18  pdIssuedAt
- * 19  pdExpiresAt
+ * 18  pdPrizePoolHash       (ScriptHash of B1PrizePool validator)
+ * 19  pdIssuedAt            (POSIX ms, immutable)
+ * 20  pdExpiresAt           (POSIX ms, immutable)
  */
 
 type PrizeState = { fields: unknown[] }
@@ -222,7 +226,7 @@ function decodePrizeDatum(utxo: UTxO): PrizeState | null {
     if (raw == null) return null
     const parsed = parseData(raw)
     const fields = asFields(parsed)
-    if (!fields || fields.length !== 20) return null
+    if (!fields || fields.length !== 21) return null
     return { fields }
   } catch {
     return null
@@ -265,11 +269,11 @@ export async function findB1PrizePoolUtxo(
   b1PrizePoolAddress: string,
 ): Promise<UTxO | null> {
   const utxos = await lucid.utxosAt(b1PrizePoolAddress)
-  for (const utxo of utxos) {
-    const datum = decodeB1PrizePoolDatum(utxo)
-    if (datum) return utxo
+  const candidates = utxos.filter((utxo: UTxO) => decodeB1PrizePoolDatum(utxo) !== null)
+  if (candidates.length > 1) {
+    throw new Error('B1PrizePool singleton violation: multiple valid Pool UTxOs found')
   }
-  return null
+  return candidates[0] ?? null
 }
 
 // ---------------------------------------------------------------------------
@@ -395,7 +399,7 @@ export async function syncBeacon(opts: {
   if (!lucid) throw new Error('Wallet not connected')
 
   const table = opts.table ?? defaultPrizeTable
-  const scripts = buildScriptsFromLucid(lucid, table)
+  const scripts = buildScriptsFromLucid(lucid, table, ORACLE_PUBLISHER_PKH)
 
   const prizeUtxo = await findPrizeUtxo(
     lucid,
@@ -480,7 +484,7 @@ export async function revealPrize(opts: {
 
   const playerSecret = fromHex(secretHex)
   const table = opts.table ?? defaultPrizeTable
-  const scripts = buildScriptsFromLucid(lucid, table)
+  const scripts = buildScriptsFromLucid(lucid, table, ORACLE_PUBLISHER_PKH)
 
   const prizeUtxo = await findPrizeUtxo(
     lucid,
@@ -586,23 +590,18 @@ export async function revealPrize(opts: {
   const nextDatum = datumFromFields(nextFields)
   const owner = await lucid.wallet.address()
 
-  // B1PrizePool: compute reserveRelease and find pool UTxO
+  // B1PrizePool: deterministic reserve derivation from PrizeDatum's pdPriceUsdm
   const b1ppUtxo = await findB1PrizePoolUtxo(lucid, opts.b1PrizePoolAddress)
   if (!b1ppUtxo) throw new Error('B1PrizePool UTxO not found')
 
   const b1ppDatum = decodeB1PrizePoolDatum(b1ppUtxo)
   if (!b1ppDatum) throw new Error('B1PrizePool datum not decodable')
 
-  const unresolvedReserve = b1ppInt(b1ppDatum, 2) ?? 0
-  const unresolvedCount = b1ppInt(b1ppDatum, 3) ?? 0
-  const reserveRelease = unresolvedCount > 0
-    ? Math.floor(unresolvedReserve / unresolvedCount)
-    : 0
-
-  // Build next B1PrizePool datum
+  // Build next B1PrizePool datum with deterministic reserve
   const nextB1ppFields = [...b1ppDatum.fields]
-  nextB1ppFields[2] = BigInt(unresolvedReserve - reserveRelease) // ppUnresolvedReserve
-  nextB1ppFields[3] = BigInt(unresolvedCount - 1) // ppUnresolvedTicketCount
+  // Deterministic: reserveRelease = priceUsdm (same formula as TicketIssued)
+  nextB1ppFields[2] = BigInt((b1ppInt(b1ppDatum, 2) ?? 0) - priceUsdm) // ppUnresolvedReserve
+  nextB1ppFields[3] = BigInt((b1ppInt(b1ppDatum, 3) ?? 0) - 1) // ppUnresolvedTicketCount
   nextB1ppFields[1] = BigInt((b1ppInt(b1ppDatum, 1) ?? 0) + prizeAmount) // ppPendingLiabilities
   const nextB1ppDatum = datumFromFields(nextB1ppFields)
 
@@ -611,11 +610,8 @@ export async function revealPrize(opts: {
     // PrizeValidator: spend and update
     .collectFrom([prizeUtxo], revealRedeemer(secretHex))
     .attachSpendingValidator(scripts.prizeValidator as Script)
-    // B1PrizePool: spend and update
-    .collectFrom([b1ppUtxo], b1ppTicketRevealedRedeemer(
-      BigInt(reserveRelease),
-      BigInt(prizeAmount),
-    ))
+    // B1PrizePool: spend and update with deterministic priceUsdm
+    .collectFrom([b1ppUtxo], b1ppTicketRevealedRedeemer(BigInt(priceUsdm)))
     .attachSpendingValidator(scripts.b1PrizePool as Script)
     // Output: updated PrizeDatum
     .payToContract(
@@ -658,7 +654,7 @@ export async function claimPrize(opts: {
   if (!lucid) throw new Error('Wallet not connected')
 
   const table = opts.table ?? defaultPrizeTable
-  const scripts = buildScriptsFromLucid(lucid, table)
+  const scripts = buildScriptsFromLucid(lucid, table, ORACLE_PUBLISHER_PKH)
 
   const prizeUtxo = await findPrizeUtxo(
     lucid,
