@@ -1,239 +1,85 @@
 PRE-RICH — GAME ECONOMY
 
+Status: Normative economic policy baseline
+Protocol: PRE-RICH Scratch & Win
+Baseline: B1 / b1-hardening
+Document role: Authoritative economic policy. It defines economic semantics and invariants; it does not by itself prove current implementation conformance.
+
 1. Purpose
 
-This document defines the normative economic model of PRE-RICH.
+PRE-RICH uses a transparent, deterministic and protocol-controlled game economy.
 
-The objective is to maintain a transparent, deterministic and protocol-controlled game economy in which:
+The economic model is based on:
 
-all game revenue enters protocol-controlled Treasury;
+protocol-controlled custody;
 
-no team, developer, founder or administrator receives a privileged economic allocation;
+no privileged personal allocation;
 
-prizes and winner selection derive from protocol rules and verified randomness;
+liability/protection-first accounting;
 
-existing liabilities and unresolved exposure are accounted for before new economic exposure is created;
+verified randomness;
 
-ticket ownership carries the associated economic right;
+ticket-bound economic rights;
 
-ticket classes expand automatically as solvency permits and contract automatically when solvency falls;
+state-derived class activation and automatic contraction;
 
-Jackpot activation is automatic and non-discretionary;
+a separate, protected Jackpot;
 
-governance may modify bounded parameters but cannot override individual economic outcomes.
+bounded governance that cannot override individual economic outcomes.
 
-The canonical economic denomination is USDM. Other assets may be accepted for payment or settlement only through a validated on-chain conversion mechanism.
+The canonical economic denomination is USDM. Other assets may be accepted for payment or settlement only through a validated conversion mechanism.
 
-2. Core Economic Principles
+2. Canonical Economic Parameters
 
-2.1 Protocol custody
+The following values are frozen for this baseline:
 
-Player payments belong to the protocol and enter protocol-controlled Treasury. No required flow may route player funds through a personal operator wallet.
+KA = 8
 
-2.2 No privileged beneficiary
+KC = 4
 
-There is no protocol-level team, founder, developer or administrator entitlement. Maintenance is a protocol category, not a personal allocation.
+KD = 4
 
-2.3 Deterministic economics
+Ticket ladder: 1 / 2 / 3 / 5 / 10 / 25 / 50 / 100 USDM
 
-Ticket price, class availability, prize calculation, Jackpot activation and claim validity derive from protocol state, configured parameters and cryptographically verifiable inputs.
+Genesis ticket price: 1 USDM
 
-2.4 Liability-first accounting
+Genesis activation threshold: verified PRE Treasury value >= 4,000 USDM
 
-Funds already committed to pending prizes, unresolved tickets, safety capital or a locked Jackpot are not freely available for new obligations.
+Maximum normal payout: 500 × P
 
-2.5 Economic right follows the ticket
+Unresolved-ticket reserve: price-based statistical model
 
-Transfer of a ticket transfers its associated economic right, including a crystallised but unclaimed prize where transfer is permitted.
+Deterministic unresolved exposure: 500 × P × N
 
-2.6 Pre-reveal opacity
+HighestClassEverActivated is monotonic
 
-Public information available before reveal must not meaningfully determine the ticket's symbol, tier, payout or Jackpot outcome.
+Jackpot is separate, locked and protected
 
-3. Canonical Accounting Unit and Payment
+RawSurplus = max(0, ExecutableEconomicValue - ProtectedCapital)
 
-USDM is the canonical reference unit for:
+These parameters must not be silently changed by implementation convenience.
 
-ticket prices;
+3. Protocol Custody and Accounting
 
-prize values;
+Player payments enter protocol-controlled Treasury. No required economic flow may route player funds through a personal operator wallet.
 
-solvency thresholds;
+There is no protocol-level team, founder, developer or administrator entitlement. Maintenance is an accounting category, not a personal claim.
 
-unresolved-ticket reserve;
+Accounting is liability-first:
 
-pending liabilities;
+crystallised winning liabilities;
 
-Jackpot thresholds and levels.
+unresolved-ticket reserve and deterministic exposure;
 
-The ticket price is expressed in USDM, but settlement may use USDM, ADA or another governance-approved asset.
+safety capital;
 
-When a player pays with an asset other than USDM, the protocol must determine the USDM-equivalent amount using a verified on-chain price source. The frontend quote is informational only.
+required locked Jackpot capital;
 
-The payment transaction must satisfy the class price selected by the protocol. There is no constitutional fixed 1 ADA ticket payment.
+reserve protection and other mandatory obligations;
 
-4. Genesis Activation
+only then genuine distributable surplus.
 
-4.1 Genesis class
-
-The first ticket class is:
-
-Genesis — 1 USDM
-
-4.2 PRE bootstrap condition
-
-Genesis may activate only after the Treasury contains a PRE position whose verified economic value is at least:
-
-TreasuryPREValueUSDM >= 4,000 USDM
-
-with:
-
-TreasuryPREValueUSDM =
-    TreasuryPREQuantity × VerifiedPRE_USDMPrice
-
-The 4,000 USDM value refers to PRE actually controlled by the protocol, not market capitalisation or circulating value.
-
-4.3 Bootstrap is not PrizePool liquidity
-
-The PRE position used to satisfy the Genesis condition is not automatically counted as PrizePool liquidity. If PRE is later converted into liquid settlement capital, that resulting value becomes subject to the normal Treasury and solvency rules.
-
-4.4 Genesis activation is one-way
-
-Once Genesis is legitimately activated, later PRE price movements cannot invalidate already-issued tickets or retroactively deactivate Genesis.
-
-5. Ticket Class Ladder
-
-PRE-RICH uses the following ticket classes:
-
-Class
-
-Ticket price
-
-Genesis
-
-1 USDM
-
-2
-
-2 USDM
-
-3
-
-3 USDM
-
-4
-
-5 USDM
-
-5
-
-10 USDM
-
-6
-
-25 USDM
-
-7
-
-50 USDM
-
-8
-
-100 USDM
-
-The protocol may present the classes as simply:
-
-1 / 2 / 3 / 5 / 10 / 25 / 50 / 100 USDM
-
-Higher classes are never enabled by an administrator. They become saleable only when the protocol's economic state satisfies the class activation rules.
-
-6. Normal Prize Economics
-
-The normal game keeps the existing five winning tiers and their current probability distribution.
-
-The current Plutus game rules use base multipliers:
-
-Tier
-
-Base multiplier
-
-Effective normal payout
-
-Tier 1
-
-2
-
-1× ticket price
-
-Tier 2
-
-5
-
-2.5× ticket price
-
-Tier 3
-
-10
-
-5× ticket price
-
-Tier 4
-
-200
-
-100× ticket price
-
-Tier 5
-
-1000
-
-500× ticket price
-
-Therefore the maximum normal payout is always 500× the ticket price.
-
-Examples:
-
-Ticket
-
-Maximum normal win
-
-1 USDM
-
-500 USDM
-
-2 USDM
-
-1,000 USDM
-
-3 USDM
-
-1,500 USDM
-
-5 USDM
-
-2,500 USDM
-
-10 USDM
-
-5,000 USDM
-
-25 USDM
-
-12,500 USDM
-
-50 USDM
-
-25,000 USDM
-
-100 USDM
-
-50,000 USDM
-
-A winning payout is calculated at reveal and becomes immutable at crystallisation.
-
-7. Effective Pool
-
-The PrizePool gross balance is not automatically available for new economic exposure.
+Effective Pool
 
 For accounting asset A:
 
@@ -243,63 +89,119 @@ EffectivePool(A) =
   - UnresolvedTicketReserve(A)
   - LockedJackpotLiquidity(A)
 
-The protocol must maintain:
+The invariant is:
 
 PendingWinningLiabilities
 + UnresolvedTicketReserve
 + LockedJackpotLiquidity
 <= TotalLiquidity
 
-and therefore:
+Jackpot liquidity must be deducted exactly once.
 
-EffectivePool >= 0
+4. Genesis Activation
 
-Jackpot liquidity is subtracted exactly once. It must not also be represented as another liability unless the accounting transition explicitly removes it from the Jackpot bucket at the same time.
+The first class is:
 
-8. Unresolved-Ticket Reserve
+Genesis = 1 USDM
 
-Every unrevealed ticket creates uncertainty and therefore consumes economic capacity.
+Genesis may activate only when protocol-controlled PRE has verified economic value of at least:
 
-The current statistical model is:
+TreasuryPREValueUSDM >= 4,000 USDM
 
-UnresolvedReserve(N) =
-    N × μ + Z × σ × sqrt(N)
+The bootstrap PRE position is not automatically PrizePool liquidity.
 
-For Genesis modelling, the reference distribution is:
+Once Genesis is legitimately activated, later PRE price movements cannot retroactively invalidate Genesis or already-issued tickets.
 
-Loss: 75%
+5. Ticket Class Ladder
 
-1 USDM: 17%
+1 / 2 / 3 / 5 / 10 / 25 / 50 / 100 USDM
 
-2.5 USDM: 6%
+Classes are never enabled by an administrator. Saleability is derived from verified post-sale economic state.
 
-5 USDM: 1.8%
+The current active class and the historical maximum class are distinct:
 
-100 USDM: 0.19%
+CurrentActiveClass may contract when solvency deteriorates.
 
-500 USDM: 0.01%
+HighestClassEverActivated only increases and anchors Jackpot maturity.
 
-with approximately:
+6. Normal Prize Economics
+
+The normal game retains its five winning tiers.
+
+Tier
+
+Base multiplier
+
+Effective payout
+
+1
+
+2
+
+1 × P
+
+2
+
+5
+
+2.5 × P
+
+3
+
+10
+
+5 × P
+
+4
+
+200
+
+100 × P
+
+5
+
+1000
+
+500 × P
+
+Therefore:
+
+MaximumNormalPayout(P) = 500 × P
+
+A winning payout is calculated at reveal and becomes immutable at crystallisation.
+
+7. Unresolved-Ticket Reserve
+
+Every unrevealed ticket consumes economic capacity.
+
+The reference statistical model is:
+
+UnresolvedReserve(N) = N × μ + Z × σ × sqrt(N)
+
+Genesis reference values:
 
 μ ≈ 0.65 USDM
 σ ≈ 6.676 USDM
 Z ≈ 3.09
 
-The statistical reserve is a risk model, not a deterministic guarantee. Safety must additionally account for the maximum possible unresolved exposure and the available safety floor.
+Reference Genesis distribution:
 
-Because payout scales linearly with ticket price, the Genesis reserve model scales linearly with class price when the probability table is unchanged.
+Loss       75%
+1 USDM     17%
+2.5 USDM    6%
+5 USDM      1.8%
+100 USDM    0.19%
+500 USDM    0.01%
 
-9. Deterministic Exposure and Class Activation
+The statistical reserve is a risk model, not a deterministic guarantee.
 
-The protocol must distinguish statistical reserve from deterministic worst-case exposure.
+8. Deterministic Exposure and Class Control
 
-For class price P and N unresolved tickets of that class:
+For class price P and N unresolved tickets:
 
 WorstCaseExposure(P, N) = 500 × P × N
 
-A class may be opened for new sales only if the resulting state remains within the protocol's approved risk budget.
-
-The activation decision must therefore be based on the post-sale economic state, not on a single static balance check.
+A proposed sale is valid only if the post-sale state satisfies all mandatory economic constraints.
 
 Conceptually:
 
@@ -309,161 +211,128 @@ ClassAvailable(C) =
       - statistical reserve requirement
       - deterministic exposure requirement
       - safety floor
-      - Jackpot/liability constraints
+      - liability constraints
+      - protected Jackpot constraints
 
-This replaces arbitrary hard-coded RequiredCapital(C) values with a state-derived rule.
+An aggregate unresolved count alone is insufficient because ticket prices differ. The implementation must maintain class-aware exposure or an equivalent deterministic mechanism.
 
-9.1 Per-class exposure caps
+Automatic contraction
 
-The PrizePool state must be able to enforce a maximum unresolved exposure per class or an equivalent deterministic exposure accounting method.
+When solvency deteriorates:
 
-An aggregate unresolved-ticket count alone is not sufficient when ticket prices differ.
+100 → 50 → 25 → 10 → 5 → 3 → 2 → 1 → HALT
 
-9.2 Current active class
+Suspension affects only new sales. Existing tickets and crystallised liabilities remain valid.
 
-Only classes at or below the highest class currently permitted by solvency may be sold.
+Hysteresis
 
-If solvency deteriorates, the highest permitted class contracts automatically:
+Activation and suspension use separate thresholds to avoid oscillation.
 
-100 → 50 → 25 → 10 → 5 → 3 → 2 → 1
+The economic principle is frozen, but exact numerical hysteresis thresholds are not claimed as frozen constants until explicitly adopted as implementation-policy parameters.
 
-If Genesis itself is unsafe, new ticket sales halt.
+9. Treasury Distribution
 
-Existing tickets remain valid and existing crystallised liabilities remain payable.
+The former:
 
-9.3 Hysteresis
+75% PrizePool / 10% Reserve / 10% Stake / 5% Maintenance
 
-Activation and suspension thresholds should be separate so that a class does not oscillate on and off because of small market or accounting changes.
+split is historical and non-canonical.
 
-10. Treasury Distribution
+It is:
 
-All player payments enter Treasury and are then allocated according to protocol rules.
+not a constitutional default;
 
-The economic priority is:
+not an obligation;
 
-crystallised winning liabilities;
+not a current economic constant;
 
-unresolved-ticket reserve;
+not a personal entitlement.
 
-PrizePool safety capital;
+Current accounting is liability/protection-first, followed by genuine distributable surplus and any explicitly governed policy distribution.
 
-required locked Jackpot capital;
+10. Jackpot Economy
 
-Reserve protection;
+The Jackpot is economically separate from the five normal symbols and must not alter their probability distribution.
 
-only then distributable surplus.
-
-A proposed initial configurable distribution remains:
-
-75% PrizePool
-10% Reserve
-10% Stake
-5% Maintenance
-
-These percentages are configuration parameters, not unconditional claims on gross revenue. They must never override solvency requirements.
-
-Jackpot funding must come from genuine surplus/available economic capacity, not from capital already required to satisfy player liabilities.
-
-11. Jackpot Economy
-
-The Jackpot is separate from the five normal symbols. It must not change the normal probability distribution.
-
-The Jackpot must be substantially larger than the maximum normal win.
-
-11.1 Reference unit
+10.1 Maturity reference
 
 Let:
 
 M = 500 × HighestClassEverActivated
 
-where HighestClassEverActivated is monotonic and is not reduced by later temporary solvency contraction.
+HighestClassEverActivated is monotonic.
 
-The reference Jackpot ladder is:
+Reference ladder:
 
-Jackpot level
+J1 = 10 × M
+J2 = 20 × M
+J3 = 50 × M
+J4 = 100 × M
+J5 = 250 × M
 
-Target
+At Genesis (M = 500 USDM):
 
-J1
+5,000 / 10,000 / 25,000 / 50,000 / 125,000 USDM
 
-10 × M
+After class 100 has once been activated (M = 50,000 USDM):
 
-J2
+500,000 / 1,000,000 / 2,500,000 / 5,000,000 / 12,500,000 USDM
 
-20 × M
+10.2 Funding
 
-J3
+Jackpot funding comes only from genuine residual surplus and must pass the Economic Gate.
 
-50 × M
+There is no fixed canonical JackpotAllocationRate.
 
-J4
+Any future allocation rate is a separate normative policy decision and must not be presented as already frozen.
 
-100 × M
+10.3 Activation
 
-J5
+A level is active when:
 
-250 × M
+LockedJackpotLiquidity >= Target(level)
 
-At Genesis, where M = 500 USDM, the reference levels are:
+and the resulting state remains solvent.
 
-J1 =   5,000 USDM
-J2 =  10,000 USDM
-J3 =  25,000 USDM
-J4 =  50,000 USDM
-J5 = 125,000 USDM
+10.4 Payout safety invariant
 
-After class 100 has once been activated, M = 50,000 USDM and the corresponding levels become:
+The payout can never exceed the locked Jackpot:
 
-J1 =   500,000 USDM
-J2 = 1,000,000 USDM
-J3 = 2,500,000 USDM
-J4 = 5,000,000 USDM
-J5 = 12,500,000 USDM
+JackpotPayout <= LockedJackpotLiquidity
 
-These levels form the economic reference ladder. Their implementation constants must be frozen before contract changes are made.
+The policy choice between paying the threshold amount and paying the full current locked balance remains explicitly open until adopted as a normative decision. Implementation must not silently choose one.
 
-11.2 Jackpot accumulation
+10.5 Selection and reset
 
-Jackpot liquidity accumulates only from economic capacity that remains after mandatory obligations and safety requirements.
+Jackpot assignment uses cryptographically verifiable randomness and is non-discretionary.
 
-A governed JackpotAllocationRate may determine what fraction of genuine distributable surplus is locked into the Jackpot. The rate is not yet a frozen constant and must be chosen after simulation.
+After payout, the paid amount becomes a normal pending liability and the Jackpot bucket is reduced exactly once. HighestClassEverActivated remains monotonic.
 
-11.3 Jackpot activation
-
-A Jackpot level becomes active when its locked Jackpot balance reaches that level's target and the resulting state remains solvent.
-
-JackpotActive(level) =
-    LockedJackpotLiquidity >= Target(level)
-
-The actual Jackpot amount available to the winner may be the full locked Jackpot balance, subject to the final payout accounting rule adopted before implementation.
-
-11.4 Jackpot selection
-
-Jackpot assignment must use the protocol's cryptographically verifiable randomness. No operator, backend or administrator may select the recipient.
-
-A Jackpot event must be domain-separated from the normal symbol derivation so that adding the Jackpot cannot alter the normal five-symbol distribution.
-
-11.5 Jackpot payout and reset
-
-After a successful Jackpot payout, the paid Jackpot liability must be transferred into the normal pending-liability accounting and the Jackpot bucket reset according to the final state transition.
-
-HighestClassEverActivated remains monotonic. A later Jackpot rebuild therefore starts from the same maturity-based ladder rather than falling back to a lower class-derived target.
-
-12. Prize Settlement
+11. Settlement
 
 Prize values are frozen in USDM.
 
-If the pool lacks sufficient USDM but has sufficient ADA or another approved asset, the protocol may settle the same frozen USDM value using the verified on-chain exchange rate.
+Settlement may occur in USDM, ADA or another approved asset only when the verified conversion preserves the frozen USDM economic value.
 
-For example:
+Oracle validation must address:
 
-FrozenPrize = 100 USDM
+asset identity;
 
-may be settled in the exact ADA amount required by the verified ADA/USDM quote, subject to rounding, freshness and minimum-UTxO rules.
+price validity;
 
-Changing settlement asset must never reduce the frozen economic value of the prize.
+freshness;
 
-13. Prize Crystallisation and Claims
+decimal handling;
+
+deterministic rounding;
+
+minimum-UTxO treatment;
+
+rejection of stale or malformed data.
+
+The economic value of a crystallised prize cannot be reduced by changing settlement asset.
+
+12. Reveal, Crystallisation and Claim
 
 At reveal:
 
@@ -471,137 +340,139 @@ Reveal
   ↓
 Verify randomness
   ↓
-Derive symbols/result
+Derive result
   ↓
-Determine tier
+Determine tier / Jackpot result
   ↓
-Check EffectivePool
+Check economic capacity
   ↓
 Freeze payout
 
-A winning payout becomes a pending protocol liability and cannot later change because of:
+A crystallised payout is immutable.
+
+It cannot be changed by:
 
 Treasury movements;
 
-PRE price movements;
+PRE price changes;
 
-ticket-class suspension;
+class suspension;
 
 governance changes;
 
 later Pool growth or contraction.
 
-Claims are single-use economic transitions. Claiming does not require burning the NFT.
+Claims are single-use economic transitions.
 
-The NFT may remain as a historical collectible after the economic claim is exercised.
+CLAIM ≠ BURN: claiming does not require NFT destruction.
 
-14. Expiry
+13. Expiry
 
-The initial ticket economic lifetime is at least 365 days.
+The economic semantics of expiry are frozen:
 
-Expiry removes the remaining economic claim of an unclaimed winning ticket according to the protocol expiry rules. The NFT may remain as historical data.
+no claim is possible after expiresAt;
 
+no new liability is created after expiry;
 
----
+unresolved reserve is released exactly once;
 
-## 14.5 Secondary Market and Economic Right
+an expired unclaimed winning right is released exactly once;
 
-Tickets are transferable. For an unrevealed ticket:
+a late historical reveal may preserve historical information;
 
-```text
-Alice → Bob → Charlie → Reveal
-```
+a late reveal must not create claimability or revive a dissolved economic right.
 
-Transfer does not modify the ticket identity, commitment, round, game configuration or future result. The economic right follows the ticket. Where permitted, a revealed but unclaimed winning ticket may also be transferred, and its crystallised payout remains attached to the ticket. Transfer must never duplicate the economic claim.
+The exact ticket lifetime duration is not claimed as a frozen constitutional constant in this baseline. The previously referenced 365-day value is not normative until explicitly adopted.
 
----
+14. Secondary Market and Ticket Identity
 
-## 14.6 NFT Retention and Voluntary Burn
+Tickets are transferable.
 
-Claiming a prize does not require destroying the ticket NFT. A claimed ticket may remain a historical collectible containing its identity, result, tier, historical payout, Jackpot status and claim status.
+Transfer does not alter:
 
-Burning is voluntary and provides no refund, additional prize or economic bonus.
+ticket identity;
 
-```text
+commitment;
+
+round;
+
+game configuration;
+
+future result.
+
+The economic right follows the ticket.
+
+A revealed but unclaimed winning ticket may be transferable where permitted; its crystallised payout remains attached to the ticket. Transfer must never duplicate the economic claim.
+
+15. NFT Retention and Voluntary Burn
+
+A claimed ticket may remain as a historical collectible containing its identity, result, tier, payout and claim status.
+
+Burning is voluntary and provides no refund, bonus or additional economic right.
+
 CLAIM ≠ BURN
-```
 
-The protocol must never require burning a winning ticket merely to exercise its economic right.
+16. Ticket-Sale Atomicity
 
----
+The intended B1 economic transition is:
 
-## 14.7 Ticket-Sale Atomicity
-
-For B1, the preferred ticket-sale transition is atomic from the protocol's economic perspective:
-
-```text
 Ticket mint
     +
 Treasury payment
     +
 PrizePool unresolved-ticket reservation
-```
 
-The protocol must not accept an economically issued ticket when the required payment or unresolved-ticket reservation is absent. Off-chain bookkeeping cannot replace on-chain enforcement.
+The protocol must not accept an economically issued ticket when the required payment or reservation is absent.
 
----
+Off-chain bookkeeping cannot substitute for on-chain enforcement.
 
-## 14.8 Treasury → PrizePool Funding
+17. Treasury → PrizePool Funding
 
-Treasury funding of PrizePool is a protocol-controlled economic transition. The destination must be the configured PrizePool script, not an arbitrary operator wallet. Funding must preserve all liability, unresolved-reserve, Jackpot and safety-capital invariants.
+Treasury funding of PrizePool is protocol-controlled and must target the configured PrizePool script.
 
----
+Funding must preserve:
 
-## 14.9 Automatic Safety Circuit Breaker
+crystallised liabilities;
 
-If verified solvency deteriorates, the protocol automatically reduces new economic exposure in this order:
+unresolved reserve;
 
-```text
-100 → 50 → 25 → 10 → 5 → 3 → 2 → 1 → HALT
-```
+deterministic exposure;
 
-Suspension affects only new sales. Existing tickets, historical results and crystallised payouts remain valid. Reactivation occurs only when the defined activation condition, including hysteresis, is satisfied.
+locked Jackpot;
 
+safety capital;
 
-## 14.10 Operational OPEX and Event-Driven Observation
+all other mandatory economic invariants.
 
-**Operational guidance — non-normative for validators.**
+18. Operational OPEX
 
-Maintenance allocation is a protocol accounting category. It is not an automatic entitlement to a relayer, operator, developer, founder, administrator or other service provider, and it does not itself authorize reimbursement from protocol funds.
+Maintenance is a protocol accounting category, not an automatic personal reimbursement.
 
-Operational observation should be activity-proportional. The expected operating modes are:
+Operational observation should be activity-proportional:
 
-- **SLEEP:** no relevant protocol event is pending; no continuous observation or polling obligation is implied.
-- **ACTIVE:** a bounded game, Treasury, ticket, reveal, claim or beacon-related event requires observation and transaction construction.
-- **QUIESCENT:** an event has completed and the system waits for the next protocol-relevant trigger.
+SLEEP: no relevant event pending;
 
-Recovery is a liveness function only. It may restore an interrupted service or resubmit objectively valid evidence, but it must not alter ticket outcomes, economic rights, Beacon selection, payout values or other protocol truth.
+ACTIVE: protocol-relevant event requires observation/construction;
 
-The operational OPEX model must distinguish the cost bearer from the accounting category:
+QUIESCENT: event completed, awaiting the next trigger.
 
-- ticket purchases, Treasury funding and claims each incur their own Cardano transaction costs;
-- external oracle and adapter costs are operational expenses, not evidence of an operator entitlement;
-- B1 Beacon observation may require an authorized publisher/relayer, and its costs are attributable to that operational trust boundary;
-- a future B3 proof path may move costs to proof generation and verification, but B3 is not implemented and must not be assumed by current operations;
-- Beacon observation should be approximately once per round or checkpoint, not once per ticket, unless the implemented architecture makes per-ticket observation objectively necessary.
+Recovery is a liveness function only. It cannot alter outcomes, economic rights, randomness, payouts or protocol truth.
 
-Economic scalability requires routine observation to scale primarily with meaningful protocol events rather than idle time or ticket count. This guidance intentionally does not mandate a provider, hosting model, polling interval, retry service or reimbursement mechanism.
+B1 may require an authorized Beacon publisher/relayer. A future B3 proof path must not be assumed to be implemented.
 
-15. Governance
+19. Governance
 
-Governance may modify bounded economic parameters, including where constitutionally allowed:
-
-Treasury percentages;
+Governance may modify bounded parameters where constitutionally permitted, including:
 
 safety floor;
 
 statistical reserve parameters;
 
-per-class exposure limits;
+class exposure limits;
 
 activation/suspension hysteresis;
 
-Jackpot allocation rate;
+future Jackpot allocation policy;
 
 Jackpot ladder parameters;
 
@@ -613,7 +484,7 @@ Governance may not:
 
 assign an individual winner;
 
-assign an individual Jackpot recipient;
+assign a Jackpot recipient;
 
 alter a crystallised payout;
 
@@ -621,35 +492,33 @@ bypass solvency requirements for a specific transaction;
 
 create a privileged personal Treasury entitlement.
 
-Governance controls parameters. It does not become the economic authority of individual games.
+Governance controls parameters; it does not become the economic authority of individual games.
 
-16. Economic Invariants
-
-The following properties are normative:
+20. Economic Invariants
 
 E1 — No privileged beneficiary
-No protocol revenue is a personal entitlement of the team, founder, developer or administrator.
+No protocol revenue is a personal entitlement.
 
 E2 — Protocol custody
 Player payments are received by protocol-controlled components.
 
 E3 — Liability-first accounting
-Committed liabilities and reserves reduce available economic capacity.
+Committed liabilities and reserves reduce available capacity.
 
 E4 — Deterministic payout
-The payout derives from protocol rules and verified randomness.
+Payout derives from protocol rules and verified randomness.
 
 E5 — Crystallisation
 A winning payout becomes immutable when crystallised.
 
 E6 — Automatic class control
-Ticket-class availability depends on verified economic state, not operator discretion.
+Class availability depends on verified economic state.
 
 E7 — Worst-case safety
-Class activation must not create deterministic exposure beyond the approved risk budget.
+New exposure must remain within the approved deterministic risk budget.
 
 E8 — Jackpot separation
-The Jackpot does not alter the normal five-symbol distribution.
+The Jackpot does not alter normal symbol probabilities.
 
 E9 — Jackpot autonomy
 Jackpot activation and recipient selection are non-discretionary.
@@ -663,14 +532,38 @@ A winning economic right can be claimed only once.
 E12 — No forced burn
 Claim does not require NFT destruction.
 
-E13 — Expiry
-Economic rights expire according to the defined ticket lifetime.
+E13 — Expiry finality
+Expiry dissolves the remaining economic right; late reveal cannot recreate it.
 
-E14 — Multi-asset settlement
-Alternative settlement assets must preserve the frozen USDM economic value.
+E14 — Multi-asset value preservation
+Alternative settlement assets preserve the frozen USDM value.
 
 E15 — Governance limitation
-Governance cannot override constitutional economic outcomes.
+Governance cannot override individual economic outcomes.
 
-E16 — Activity-proportional operational OPEX
-Operational observation and recovery must not create an automatic personal entitlement to Maintenance or protocol revenue. Operational work should scale with protocol-relevant activity and preserve the separation between current B1 publisher-authorized costs and any future B3 proof-path costs.
+E16 — Activity-proportional operations
+Operational work must not create an automatic personal entitlement to protocol revenue.
+
+21. Implementation Truth
+
+This document is normative economic policy. It is not evidence that every requirement is already enforced by the B1 validator or off-chain implementation.
+
+Implementation truth is established separately through:
+
+docs/CONSTITUTION-GAP-MATRIX.md;
+
+validator code and generated artifacts;
+
+off-chain implementation;
+
+unit/integration/conformance tests;
+
+reference-model evidence;
+
+deployment/predeploy gates.
+
+An implementation gap does not reopen frozen economic parameters. A change to a frozen economic parameter requires an explicit new normative decision.
+
+Economic baseline status: SEMANTICALLY CLOSED / NORMATIVE
+Implementation status: CONFORMANCE OPEN
+Open policy items retained explicitly: Jackpot payout amount policy, exact expiry duration, exact numerical activation/suspension hysteresis, and any future Jackpot allocation rate.
