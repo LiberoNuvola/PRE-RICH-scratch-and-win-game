@@ -1,61 +1,68 @@
 # PRE-RICH Architecture Specification
 
-**Status:** Normative architecture specification
-**Constitution:** `docs/CONSTITUTION.md`
-**Primary trust model:** `docs/beacon-trust-model.md`
-**B3 canonicality specification:** `docs/beacon-canonicality-spec.md`
+**Status:** Normative V3 architecture baseline  
+**Protocol state:** Economic semantics consolidated; implementation conformance remains open  
+**Constitution:** `docs/CONSTITUTION.md`  
+**Economic specification:** `docs/Game-Economy.md` and `docs/Game-Economy-Specification.md`  
+**Trust model:** `docs/beacon-trust-model.md`  
+**B3 canonicality target:** `docs/beacon-canonicality-spec.md`
 
 ---
 
-# 1. Purpose
+# 1. Purpose and status
 
-PRE-RICH is a Cardano-based scratch-and-win protocol designed to provide:
+PRE-RICH is a Cardano-based scratch-and-win protocol whose architecture separates:
 
-* deterministic on-chain game logic;
-* cryptographically bound player commitments;
-* unpredictable results before reveal;
-* permissionless claims;
-* deterministic prize calculation;
-* automatic treasury operation;
-* transferable ticket NFTs;
-* public verifiability;
-* progressive elimination of trusted intermediaries.
+- authoritative economic state;
+- deterministic game logic;
+- cryptographic commitment and reveal;
+- external-state observation and verification;
+- executable liquidity and solvency;
+- permissionless settlement;
+- protocol-controlled treasury operation;
+- public verification.
 
-The architecture MUST preserve the four fundamental protocol properties:
+This document is the architectural baseline for the **V3 economic model**.
+
+It does **not** claim that every requirement described here is already implemented on-chain.
+
+The project MUST distinguish:
 
 ```text
-TRUSTLESS
-+
-ON-CHAIN
-+
-SECURE
-+
-AUTOMATIC
+NORMATIVE TARGET
+        ↓
+IMPLEMENTATION
+        ↓
+TEST / PROOF
+        ↓
+CONFORMANCE VERDICT
 ```
 
-These properties are inseparable.
+Historical implementation status, old TODO checkboxes, or the existence of a related function MUST NOT be treated as proof of V3 conformance.
 
-A component that is automatic but trusted is not fully trustless.
-
-A component that is on-chain but permits an operator to choose the economic result is not secure.
-
-A component that is cryptographically secure but requires an administrator to execute ordinary user rights is not fully automatic.
+The current B1 implementation is an interim operational architecture. B3 remains the target for objectively verifiable external-state canonicality.
 
 ---
 
-# 2. Architectural Authority
+# 2. Authority hierarchy
 
-The architecture MUST distinguish between:
+The protocol uses the following authority hierarchy:
 
-1. Cardano-enforced state;
-2. external observations;
-3. cryptographic evidence;
-4. derived game values;
-5. user interface data.
+```text
+Constitution / Definitive Decisions
+                ↓
+V3 Economic Specifications
+                ↓
+Architecture / State / Transition Specifications
+                ↓
+On-chain implementation
+                ↓
+Off-chain transaction construction
+                ↓
+Tests, vectors, proofs and reproducible artifacts
+```
 
-Only Cardano-enforced state and values deterministically derived from verified inputs may constitute trustless economic inputs.
-
-The following hierarchy applies:
+For runtime data:
 
 ```text
 External observation
@@ -66,453 +73,940 @@ Cryptographic verification
         ↓
 Canonical on-chain state
         ↓
-Game input
+Deterministic game input
         ↓
-Deterministic derivation
+Economic derivation
         ↓
-Economic settlement
+Atomic settlement
 ```
 
-An off-chain component MUST NOT bypass a verification layer merely because the required data is available.
+Only verified inputs and state enforced by Cardano may affect authoritative economic outcomes.
+
+An off-chain service MUST NOT become an implicit source of economic truth.
 
 ---
 
-# 3. Core Architectural Principle
+# 3. Core architectural principles
 
-The system MUST operate under the following principle:
+## 3.1 Publisher may submit; publisher must not decide
 
-> **The publisher may submit evidence. The publisher must not choose truth.**
+An external publisher may submit evidence or a candidate value.
 
-For external adapters:
+It MUST NOT have unilateral authority to define an economically authoritative value in a trustless configuration.
 
-> **The adapter may observe and prove. The adapter must not decide.**
+## 3.2 Adapter may observe and prove; adapter must not decide
 
-For relayers:
+An external adapter may retrieve:
 
-> **The relayer may facilitate execution. The relayer must not determine economic truth.**
+- headers;
+- state roots;
+- runtime information;
+- finality information;
+- authority information;
+- storage proofs;
+- other evidence.
 
-For the frontend:
+The adapter MUST NOT itself establish canonicality.
 
-> **The frontend may display and reproduce calculations. The frontend must not determine authoritative results.**
+## 3.3 Relayer may execute; relayer must not determine truth
+
+A relayer may:
+
+- construct transactions;
+- submit transactions;
+- monitor state;
+- facilitate operational transitions;
+- submit evidence or proofs.
+
+A relayer MUST NOT be able to alter:
+
+- ticket results;
+- prize tiers;
+- payout values;
+- class activation state;
+- solvency state;
+- treasury truth;
+- canonical Beacon truth.
+
+## 3.4 Frontend may display; frontend must not authorize
+
+The frontend may reproduce calculations for UX.
+
+Cardano remains authoritative for:
+
+- ticket state;
+- ownership;
+- commitment validity;
+- Beacon validity;
+- game result;
+- payout;
+- claimability;
+- economic state transitions.
 
 ---
 
-# 4. System Model
+# 4. Architectural components
 
-The high-level system is:
+The reference architecture contains:
 
 ```text
-                         ┌─────────────────────┐
-                         │       USER          │
-                         │                     │
-                         │ wallet + secret     │
-                         └──────────┬──────────┘
-                                    │
-                                    ▼
-                         ┌─────────────────────┐
-                         │     FRONTEND        │
-                         │                     │
-                         │ UX / tx builder     │
-                         └──────────┬──────────┘
-                                    │
-                                    ▼
-                         ┌─────────────────────┐
-                         │     CARDANO L1      │
-                         │                     │
-                         │ Mint / Prize /      │
-                         │ Beacon / Treasury   │
-                         └──────────┬──────────┘
-                                    │
-                      ┌─────────────┴─────────────┐
-                      │                           │
-                      ▼                           ▼
-              ┌───────────────┐          ┌────────────────┐
-              │  GAME LOGIC   │          │ CANONICAL      │
-              │               │          │ BEACON PATH   │
-              │ commit/reveal │          │                │
-              │ symbols       │          │ Materios       │
-              │ tier          │          │ ↓              │
-              │ payout        │          │ evidence       │
-              └───────────────┘          │ ↓              │
-                                         │ proof          │
-                                         │ ↓              │
-                                         │ Cardano        │
-                                         │ verifier      │
-                                         └────────────────┘
+                 ┌──────────────────────┐
+                 │        USER          │
+                 │ wallet + secret      │
+                 └──────────┬───────────┘
+                            │
+                            ▼
+                 ┌──────────────────────┐
+                 │      FRONTEND        │
+                 │ UX / tx construction │
+                 └──────────┬───────────┘
+                            │
+                            ▼
+┌──────────────────────────────────────────────────────────┐
+│                       CARDANO L1                         │
+│                                                          │
+│  Ticket / Mint     Economic State     Prize / Claim      │
+│  Counter           Treasury           Beacon Registry    │
+│                                                          │
+└───────────────┬───────────────────────┬──────────────────┘
+                │                       │
+                ▼                       ▼
+        deterministic game      verified external state
+                │                       │
+                │                       ▼
+                │                Materios / external
+                │                       │
+                │                evidence / proof
+                │                       │
+                └──────────┬────────────┘
+                           ▼
+                    economic settlement
 ```
 
-Off-chain components may facilitate the system but MUST NOT become hidden authorities.
+Off-chain infrastructure is a convenience and execution layer unless explicitly promoted to a cryptographically enforced protocol component.
 
 ---
 
-# 5. Trust Boundaries
+# 5. Trust classification
 
-Every component MUST have an explicit trust classification.
+## 5.1 Cardano validators and minting policies
 
-## 5.1 Cardano validators and policies
+These are the authoritative enforcement mechanisms.
 
-These are the primary economic enforcement mechanisms.
+They MUST enforce the protocol predicates applicable to the state transition.
 
-They determine:
-
-* valid state transitions;
-* ticket identity;
-* commitment validity;
-* reveal validity;
-* Beacon validity according to the active trust model;
-* deterministic game result;
-* payout validity;
-* claim validity;
-* treasury transitions.
-
----
+Where a requirement is not currently enforced on-chain, it MUST be classified as an implementation gap or target rather than as completed functionality.
 
 ## 5.2 Frontend
 
-The frontend is untrusted.
+**Trust:** untrusted.
 
-It may:
+May:
 
-* connect wallets;
-* generate player secrets;
-* construct transactions;
-* reproduce deterministic calculations;
-* display ticket state;
-* display estimated values;
-* initiate reveal;
-* initiate claim.
+- connect wallets;
+- generate secrets;
+- construct transactions;
+- display state;
+- calculate estimates;
+- initiate reveal;
+- initiate claim.
 
-It MUST NOT be trusted for:
+Must not determine:
 
-* winner;
-* symbols;
-* tier;
-* payout;
-* Beacon;
-* canonical external state;
-* claim validity.
+- winner;
+- symbols;
+- tier;
+- payout;
+- economic solvency;
+- Beacon canonicality;
+- claim validity.
 
-The frontend may reproduce the protocol's calculations for display, but Cardano remains authoritative.
+## 5.3 Backend / indexer / proxy
 
----
+**Trust:** untrusted convenience layer.
 
-## 5.3 Backend / proxy
+May:
 
-The backend is an untrusted read/convenience layer.
+- index UTxOs;
+- provide queries;
+- cache information;
+- discover transactions;
+- support UX.
 
-It may provide:
+It MUST NOT be required for correctness.
 
-* Cardano queries;
-* UTxO discovery;
-* indexing;
-* transaction discovery;
-* rate limiting;
-* API-key protection;
-* caching;
-* UX support.
-
-It MUST NOT be required for:
-
-* correctness of ticket commitments;
-* Beacon authenticity;
-* result derivation;
-* prize calculation;
-* claim authorization;
-* treasury correctness.
-
-A malicious backend MUST at most mislead or inconvenience the frontend.
-
-It MUST NOT be able to make invalid economic state valid.
-
----
+A malicious backend may inconvenience or mislead a frontend, but MUST NOT make invalid Cardano state valid.
 
 ## 5.4 Relayer
 
-The relayer is an untrusted automated facilitator.
+**Trust:** execution facilitator.
 
-It may:
+The relayer is not an economic authority.
 
-* monitor Cardano;
-* monitor Treasury state;
-* submit transactions;
-* publish external evidence;
-* submit proofs;
-* facilitate operational actions;
-* receive a configured execution reward.
-
-It MUST NOT:
-
-* choose ticket results;
-* choose symbols;
-* choose prize tiers;
-* choose payouts;
-* modify commitments;
-* bypass Beacon verification;
-* select a canonical root merely by being first;
-* override on-chain state transitions.
-
-A malicious relayer MUST be unable to change economic truth.
-
----
+Its failure MUST be survivable wherever the protocol claims permissionless operation.
 
 ## 5.5 External adapter
 
-The PRE-RICH Materios adapter is untrusted.
+**Trust:** untrusted evidence producer.
 
-Its purpose is to transform external protocol information into reproducible evidence and eventually proofs.
-
-It may:
-
-* query Materios RPC;
-* retrieve headers;
-* retrieve state roots;
-* retrieve runtime information;
-* retrieve GRANDPA authority information;
-* retrieve finality evidence;
-* decode SCALE data;
-* retrieve state/storage evidence;
-* construct proof artifacts.
-
-It MUST NOT itself establish canonicality.
-
-A compromised adapter must be able to produce invalid evidence, but Cardano MUST reject that evidence when it does not satisfy the required verification predicate.
+The adapter may produce false evidence. Cardano-side verification MUST reject evidence that fails the active verification predicate.
 
 ---
 
-# 6. On-Chain Components
+# 6. Canonical V3 economic architecture
 
-## 6.1 Ticket Mint Policy / Counter
-
-Responsible for:
-
-* ticket serial generation;
-* uniqueness;
-* ticket NFT minting;
-* controlled minting;
-* controlled burning where permitted;
-* exact token-name derivation.
-
-Primary implementation:
+The V3 economic state is organized into four layers:
 
 ```text
-plutus/MintPolicy.hs
-plutus/CounterValidator.hs
+GLOBAL ECONOMIC STATE
+        +
+PER-CLASS STATE
+        +
+HISTORICAL / CONTROL STATE
+        +
+JACKPOT STATE
 ```
 
-The counter UTxO and mint policy MUST preserve ticket identity and uniqueness.
+The architecture MUST NOT collapse these layers into unrelated legacy fields.
 
----
-
-# 7. Prize Validator
-
-Primary implementation:
-
-```text
-plutus/PrizeValidator.hs
-```
-
-The PrizeValidator is responsible for the authoritative game state machine.
-
-It MUST verify:
-
-* ticket identity;
-* current ticket state;
-* player commitment;
-* reveal;
-* canonical Beacon according to the active trust model;
-* deterministic ticket seed;
-* deterministic symbol generation;
-* tier calculation;
-* payout calculation;
-* current ticket ownership when required;
-* payout validity;
-* legal state transitions;
-* claim state.
-
-The PrizeValidator MUST NOT accept user-supplied symbols, tier or payout as authoritative values.
-
-The result MUST be derivable from validated inputs.
-
----
-
-# 8. Ticket State Machine
-
-The canonical lifecycle is:
-
-```text
-                 ┌─────────────┐
-                 │ UNREVEALED  │
-                 └──────┬──────┘
-                        │
-                      reveal
-                        │
-                        ▼
-                 ┌─────────────┐
-                 │  REVEALED  │
-                 └──────┬──────┘
-                        │
-                    claim
-                        │
-                        ▼
-                 ┌─────────────┐
-                 │   CLAIMED   │
-                 └─────────────┘
-```
-
-A revealed ticket may represent:
-
-```text
-WIN
-```
-
-or:
-
-```text
-LOSS
-```
-
-A loss remains a valid historical ticket state.
-
-A winning ticket's payout is frozen at reveal.
-
-After claim, the ticket MAY remain on-chain as an NFT/collectible according to the protocol rules.
-
-Claim and burn are therefore distinct operations.
-
----
-
-# 9. Ticket Ownership
-
-The current owner of the ticket is the relevant owner for permissionless operations where ownership is required.
-
-The protocol MUST NOT assume that the original purchaser remains the owner.
-
-A ticket may therefore follow:
-
-```text
-Alice
-  ↓
-Bob
-  ↓
-Charlie
-  ↓
-Reveal
-  ↓
-Claim
-```
-
-without changing the deterministic result.
-
-Transfer MUST NOT modify:
-
-* ticket identity;
-* commitment;
-* canonical Beacon;
-* result;
-* payout.
-
----
-
-# 10. Commit-Reveal
-
-The protocol uses a commit-reveal model.
-
-The canonical sequence is:
-
-```text
-Player secret
-      ↓
-Commitment
-      ↓
-On-chain binding
-      ↓
-Reveal
-      ↓
-Verified secret
-      ↓
-Deterministic result
-```
-
-The commitment MUST bind the player secret to the appropriate game context.
-
-At minimum the commitment must be bound to the relevant:
-
-* game;
-* round;
-* ticket;
-* protocol/game version;
-* nonce or equivalent identity;
-* secret.
-
-The exact encoding is defined by the commit-reveal specification.
-
-The backend MUST NOT be the authoritative storage location for the commitment.
-
-The Cardano state is authoritative.
-
----
-
-# 11. Domain Separation
-
-Every cryptographic derivation MUST use explicit domain separation.
-
-The domain must be:
-
-* explicit;
-* versioned;
-* deterministic;
-* documented;
-* identical between on-chain and off-chain implementations.
-
-Any change to a cryptographic domain is a protocol change and requires updated golden vectors.
-
----
-
-# 12. Beacon Architecture
-
-The Beacon is a critical game input.
-
-It MUST NOT be treated merely as arbitrary metadata.
-
-The architecture recognizes three trust levels.
-
----
-
-# 13. B1 — Authorized Publisher
-
-B1 is the current interim operational model.
+## 6.1 Global economic state
 
 Conceptually:
 
 ```text
-Materios / external evidence
-            ↓
-RegistryPublish
-            ↓
-authorized publisher
-            ↓
-BeaconRegistry
-            ↓
-Beacon
-            ↓
-PrizeValidator
+CrystallizedLiabilities
+UnresolvedReserve
+UnresolvedTicketCount
+SafetyCapital
+ReserveProtection
+MandatoryFutureCosts
 ```
 
-The current path uses an authorized publisher/relayer.
+The economic specification defines the exact semantics of these quantities.
 
-Therefore B1 contains a trust assumption:
+## 6.2 Per-class state
 
-> PRE-RICH trusts the configured publisher not to choose an incorrect external value.
+For every ticket class:
 
-B1 is operationally useful but is NOT fully trustless.
+```text
+IssuedCount
+UnresolvedCount
+ClassExposure
+ClassCap
+Saleable
+```
 
-B1 MUST NOT be described as B3.
+The canonical exposure relationship is:
+
+```text
+ClassExposure_i
+    =
+ClassPrice_i × UnresolvedCount_i
+```
+
+The aggregate unresolved reserve MUST be consistent with the class-level exposure model.
+
+## 6.3 Historical/control state
+
+The architecture distinguishes:
+
+```text
+CurrentActiveClass
+HighestClassEverActivated
+```
+
+These values have different semantics.
+
+`CurrentActiveClass` MAY contract.
+
+`HighestClassEverActivated` is historical and MUST be monotonic.
+
+A contraction MUST NOT rewrite the historical maximum.
+
+## 6.4 Jackpot state
+
+Jackpot state is separate from ordinary unresolved liabilities.
+
+Conceptually:
+
+```text
+LockedAmount
+Threshold
+Status
+Cycle
+```
+
+The Jackpot MUST remain protected from ordinary distribution.
 
 ---
 
-# 14. B2 — Committee Attestation
+# 7. Canonical economic derivations
 
-B2 replaces a single publisher with an attestation set.
+The architecture adopts the V3 economic derivations.
+
+## 7.1 Executable Economic Value
+
+`ExecutableEconomicValue` (EEV) is derived using the frozen economic methodology.
+
+The methodology MUST define:
+
+- asset perimeter;
+- liquidation horizon;
+- oracle source;
+- conversion rules;
+- execution costs;
+- validity conditions.
+
+EEV MUST NOT be replaced by arbitrary:
+
+- TVL;
+- global market depth;
+- informal haircuts;
+- fixed percentages.
+
+## 7.2 Protected capital
+
+Protected capital contains every amount that cannot safely be treated as discretionary surplus.
+
+Conceptually:
+
+```text
+ProtectedCapital =
+    CrystallizedLiabilities
+  + WorstCaseExposure
+  + SafetyCapital
+  + ReserveProtection
+  + LockedJackpot
+  + MandatoryFutureCosts
+```
+
+All promised obligations MUST be covered before discretionary surplus can be used.
+
+## 7.3 Worst-case unresolved exposure
+
+The canonical normal maximum payout is:
+
+```text
+500 × ClassPrice
+```
+
+For unresolved tickets:
+
+```text
+WorstCaseExposure
+    =
+500 × Σ ClassExposure_i
+```
+
+An aggregate `UnresolvedReserve` MAY be retained as a storage optimization only if it is invariantly equal to the class-level exposure sum.
+
+A single aggregate multiplication by `500` MUST NOT be treated as proof of class-aware V3 exposure unless the required equality is enforced.
+
+## 7.4 Effective Pool
+
+The protected executable pool is:
+
+```text
+EffectivePool
+    =
+EEV
+  - CrystallizedLiabilities
+  - UnresolvedReserve
+  - LockedJackpot
+```
+
+The protocol MUST reject transitions that make the resulting economic state invalid.
+
+## 7.5 Raw surplus
+
+```text
+RawSurplus
+    =
+max(0, EEV - ProtectedCapital)
+```
+
+Raw surplus is the only candidate source for discretionary Jackpot funding and AWRA activity.
+
+---
+
+# 8. Economic gate and post-state validation
+
+Economic safety MUST be evaluated on the **post-transition state**.
+
+For a transition:
+
+```text
+S --a--> S'
+```
+
+the relevant economic predicate is evaluated against `S'`.
+
+A transaction MUST NOT be accepted merely because the pre-state was solvent.
+
+The architecture requires:
+
+```text
+pre-state
+   ↓
+candidate transition
+   ↓
+post-state
+   ↓
+economic gate
+   ↓
+accept / reject
+```
+
+This is particularly important for SALE, because issuing a new unresolved ticket creates additional future exposure.
+
+---
+
+# 9. Dynamic Solvency Kernel
+
+The protocol's economic safety model is expressed through the viability kernel:
+
+```text
+K_Ω =
+{
+  S |
+  ∃ policy allowed :
+  ∀ω ∈ Ω,
+  T(S, a, ω) ∈ K_Ω
+}
+```
+
+The kernel represents states from which an admissible policy can preserve safety across the defined uncertainty set.
+
+The architecture distinguishes:
+
+- economic state;
+- admissible actions;
+- uncertainty set;
+- transition function;
+- policy;
+- resulting viability.
+
+The bounded-horizon/computational interpretation is acceptable where explicitly documented and reproducibly validated.
+
+No claim of infinite-horizon proof may be inferred from a bounded computational result.
+
+---
+
+# 10. Ticket classes
+
+The canonical ticket ladder is:
+
+```text
+1 / 2 / 3 / 5 / 10 / 25 / 50 / 100 USDM
+```
+
+Genesis price:
+
+```text
+1 USDM
+```
+
+Genesis activation threshold:
+
+```text
+>= 4,000 USDM PRE Treasury
+```
+
+The class mechanism MUST distinguish:
+
+```text
+class price
+issued count
+unresolved count
+class exposure
+class cap
+saleability
+current active class
+highest class ever activated
+```
+
+Class identity MUST be bound to the ticket's economic state.
+
+A transaction MUST NOT be able to select an economically favorable class merely by supplying an arbitrary class identifier.
+
+---
+
+# 11. Class activation, contraction and history
+
+The class controller MUST maintain two separate concepts.
+
+## 11.1 Activation history
+
+```text
+HighestClassEverActivated
+```
+
+is monotonic:
+
+```text
+H(t+1) >= H(t)
+```
+
+It MUST NOT decrease.
+
+## 11.2 Current operating class
+
+```text
+CurrentActiveClass
+```
+
+is state-derived and MAY decrease when economic safety requires contraction.
+
+The canonical contraction sequence is:
+
+```text
+100
+ ↓
+50
+ ↓
+25
+ ↓
+10
+ ↓
+5
+ ↓
+3
+ ↓
+2
+ ↓
+1
+ ↓
+HALT
+```
+
+Contraction MUST be a consequence of the economic state and policy, not discretionary administrator selection.
+
+---
+
+# 12. SALE architecture
+
+A SALE transition creates an unresolved economic obligation.
+
+Therefore SALE MUST account for:
+
+- ticket class;
+- class price;
+- issued count;
+- unresolved count;
+- class exposure;
+- unresolved reserve;
+- liquidity;
+- protected capital;
+- post-sale solvency;
+- class cap;
+- current saleability;
+- payment/conversion validity.
+
+The authoritative flow is:
+
+```text
+payment / verified conversion
+          ↓
+candidate ticket state
+          ↓
+economic state update
+          ↓
+post-state Economic Gate
+          ↓
+atomic acceptance
+```
+
+The protocol MUST NOT accept a SALE if the resulting state is outside the admissible economic region.
+
+A valid sale MUST update all economically relevant state atomically.
+
+---
+
+# 13. Atomicity
+
+Economic state changes that depend on one another MUST be performed atomically.
+
+Examples include:
+
+```text
+ticket issuance
++
+payment
++
+economic-state update
+```
+
+and:
+
+```text
+reveal
++
+result derivation
++
+liability crystallization
+```
+
+and:
+
+```text
+claim
++
+payment
++
+claim-state transition
+```
+
+Partial execution MUST NOT leave the protocol with a state that falsely represents its economic obligations.
+
+---
+
+# 14. Commit-reveal architecture
+
+The canonical lifecycle is:
+
+```text
+secret
+  ↓
+commitment
+  ↓
+on-chain binding
+  ↓
+reveal
+  ↓
+verified secret
+  ↓
+Beacon binding
+  ↓
+deterministic result
+  ↓
+payout crystallization
+```
+
+The commitment MUST bind the relevant game context, including the ticket and protocol/game version as specified by the cryptographic specification.
+
+The backend MUST NOT be the authoritative storage location.
+
+Cardano state is authoritative.
+
+---
+
+# 15. Deterministic game result
+
+The protocol MUST derive game output from validated inputs.
+
+The architecture does not permit user-supplied authoritative values for:
+
+```text
+symbols
+tier
+payout
+winner
+```
+
+The result derivation MUST be:
+
+- deterministic;
+- domain-separated;
+- versioned;
+- reproducible off-chain;
+- independently verifiable.
+
+A frontend or relayer may reproduce the result, but cannot redefine it.
+
+---
+
+# 16. Domain separation
+
+Every cryptographic derivation MUST use an explicit domain.
+
+The domain MUST be:
+
+- deterministic;
+- versioned;
+- documented;
+- identical between authoritative and reference implementations.
+
+Changing a cryptographic domain is a protocol change and requires updated vectors and conformance evidence.
+
+---
+
+# 17. Reveal, crystallization and claim
+
+## 17.1 Reveal
+
+Reveal establishes the deterministic ticket outcome.
+
+For a winning ticket, the payout becomes a crystallized liability at reveal according to the economic specification.
+
+For a loss, no positive prize liability is created.
+
+## 17.2 Claim
+
+CLAIM is an economic settlement transition.
+
+It MUST validate:
+
+- ticket state;
+- claimant/current ownership as required;
+- revealed result;
+- crystallized payout;
+- expiry;
+- available executable funds;
+- correct state transition.
+
+### CLAIM is not BURN
+
+The protocol MUST NOT require ticket NFT burning as an intrinsic condition of CLAIM.
+
+The canonical relationship is:
+
+```text
+CLAIM ≠ BURN
+```
+
+Burning MAY be supported as a separate lifecycle or supply-management operation where explicitly specified.
+
+The existence or absence of a burn MUST NOT change the mathematical validity of an otherwise valid claim.
+
+---
+
+# 18. Expiry semantics
+
+Expiry is an economic state transition, not merely a frontend timeout.
+
+Before expiry, an eligible winning ticket may retain a claim right.
+
+At expiry:
+
+```text
+unclaimed payment commitment
+        ↓
+dissolved
+```
+
+A reveal occurring after expiry MAY preserve historical information where permitted.
+
+However:
+
+```text
+late reveal
+    ≠
+new claim right
+```
+
+and:
+
+```text
+late reveal
+    ≠
+recreation of expired liability
+```
+
+The protocol MUST ensure that an expired payment commitment cannot be resurrected by a later reveal.
+
+This rule applies independently of whether historical reveal data remains observable.
+
+---
+
+# 19. PrizePool architecture
+
+The PrizePool is protected economic state.
+
+It MUST track, directly or through invariantly derived state:
+
+- total liquidity;
+- crystallized liabilities;
+- unresolved reserve;
+- unresolved ticket count;
+- locked Jackpot;
+- applicable safety protections.
+
+The PrizePool MUST NOT be treated as unrestricted treasury liquidity.
+
+The architecture is liability-first:
+
+```text
+liabilities
+    ↓
+unresolved exposure
+    ↓
+safety / reserve protection
+    ↓
+locked Jackpot
+    ↓
+mandatory future costs
+    ↓
+only then discretionary surplus
+```
+
+No distribution mechanism may bypass this ordering.
+
+---
+
+# 20. Treasury architecture
+
+Treasury is protocol-controlled.
+
+All game revenues belong to the protocol according to the economic specification.
+
+There is no canonical personal/operator revenue share.
+
+The previous fixed:
+
+```text
+75% / 10% / 10% / 5%
+```
+
+allocation is **legacy and non-canonical**.
+
+It MUST NOT be used as the V3 economic rule.
+
+Treasury implementation MUST therefore be audited for and migrated away from percentage-based legacy logic where that logic conflicts with the V3 specification.
+
+The definitive V3 architecture is:
+
+```text
+protocol revenue
+      ↓
+protocol treasury
+      ↓
+obligations / protected requirements
+      ↓
+economic gate
+      ↓
+permitted surplus actions
+```
+
+A percentage split MAY exist in an implementation or experiment only if separately defined as a non-canonical operational parameter and MUST NOT be represented as the V3 game-economy law.
+
+---
+
+# 21. Jackpot architecture
+
+The Jackpot is separate from ordinary prize obligations.
+
+Funding is constrained by:
+
+```text
+NewJackpot <= RawSurplus
+```
+
+and remains subject to the Economic Gate.
+
+There is no canonical fixed Jackpot funding percentage.
+
+Jackpot funds are:
+
+- locked;
+- protected;
+- explicitly stateful;
+- not double-counted as ordinary discretionary liquidity.
+
+Jackpot state MUST remain distinguishable from:
+
+- unresolved ticket exposure;
+- crystallized prize liabilities;
+- ordinary treasury surplus.
+
+---
+
+# 22. Oracle and multi-asset payments
+
+USDM is the canonical economic denomination.
+
+External assets may be accepted through verified conversion.
+
+The conversion layer MUST define:
+
+- authoritative asset identity;
+- oracle source;
+- timestamp validity;
+- price representation;
+- rounding;
+- validity interval;
+- execution cost treatment;
+- failure behavior.
+
+A frontend-provided exchange rate is not authoritative.
+
+The architecture MUST NOT treat a convenient market quote as equivalent to a verified protocol oracle.
+
+---
+
+# 23. Economic constants
+
+The frozen V3 baseline includes:
+
+```text
+KA = 8
+KC = 4
+KD = 4
+```
+
+Ticket ladder:
+
+```text
+1 / 2 / 3 / 5 / 10 / 25 / 50 / 100 USDM
+```
+
+Genesis:
+
+```text
+1 USDM
+```
+
+Genesis Treasury threshold:
+
+```text
+>= 4,000 USDM
+```
+
+Normal maximum payout:
+
+```text
+500 × ticket price
+```
+
+These values are normative unless superseded by an explicit new decision.
+
+Implementation work MUST NOT silently alter them.
+
+---
+
+# 24. B1 Beacon architecture
+
+B1 is the current interim operational trust model.
+
+Conceptually:
+
+```text
+external observation
+        ↓
+publisher
+        ↓
+BeaconRegistry
+        ↓
+PrizeValidator
+```
+
+B1 contains a trust assumption because an authorized publisher is involved.
+
+Therefore:
+
+```text
+B1 ≠ fully trustless
+B1 ≠ B3
+```
+
+B1 may be used for development and controlled operation, but documentation MUST NOT describe it as objectively trustless canonicality.
+
+The publisher's role is operational and explicitly bounded.
+
+---
+
+# 25. B2 committee model
+
+B2 may replace a single publisher with threshold attestation.
 
 Conceptually:
 
@@ -521,38 +1015,20 @@ external state
       ↓
 N-of-M attestation
       ↓
-Beacon anchor
-      ↓
-Cardano
+Cardano anchor
 ```
 
-The trust assumption becomes the committee threshold.
+B2 reduces single-operator dependence but remains an attestation trust model.
 
-B2 reduces dependence on a single publisher.
-
-However, B2 does not automatically prove that the attested value is objectively canonical in the underlying external protocol.
-
-Therefore:
-
-> **B2 remains an attestation-based trust model.**
+B2 does not by itself prove objective canonicality of the external chain.
 
 ---
 
-# 15. B3 — Canonical-State Proof
+# 26. B3 canonicality architecture
 
-B3 is the target trustless architecture.
+B3 is the target architecture for external-state trust minimization.
 
-B3 is a property, not a particular implementation.
-
-The core predicate is:
-
-```text
-Canonical(ref, root)
-```
-
-where `root` is the objectively canonical value associated with checkpoint `ref`.
-
-The verifier must establish:
+The required property is:
 
 ```text
 VerifyProof(ref, root, proof) = true
@@ -562,73 +1038,23 @@ Canonical(ref, root)
 
 Acceptance MUST NOT depend on:
 
-* publisher identity;
-* publisher signature;
-* first submission;
-* relayer identity;
-* backend identity.
+- publisher identity;
+- relayer identity;
+- backend identity;
+- first-submission race;
+- discretionary operator selection.
 
-The same valid evidence and proof submitted by different parties must have the same validity.
+A proof generator remains untrusted.
 
----
-
-# 16. B3 Implementation Classes
-
-B3 may be implemented through different technical architectures.
-
-Examples include:
-
-### 16.1 Authenticated L1 anchor
-
-```text
-External protocol
-      ↓
-authenticated bridge/anchor
-      ↓
-Cardano L1 object
-      ↓
-Cardano validator/policy
-      ↓
-BeaconRegistry
-```
-
-The Cardano anchor is acceptable only when its own validator/policy enforces the relevant external relationship.
+The Cardano-side verifier or authenticated L1 anchor is authoritative.
 
 ---
 
-### 16.2 Cryptographic proof adapter
+# 27. Canonical checkpoint
 
-```text
-External protocol
-      ↓
-untrusted adapter
-      ↓
-finality proof
-      ↓
-state/storage proof
-      ↓
-succinct proof
-      ↓
-Cardano verifier
-      ↓
-canonical anchor
-      ↓
-BeaconRegistry
-```
+External state MUST be bound to a deterministic checkpoint.
 
-The proof generator remains untrusted.
-
-The Cardano verifier determines acceptance.
-
-These implementations are equivalent at the architectural level only if they satisfy the B3 properties.
-
----
-
-# 17. Canonical Checkpoint
-
-The external state used by PRE-RICH MUST be bound to a deterministic checkpoint.
-
-A checkpoint SHOULD include at minimum:
+A checkpoint SHOULD include:
 
 ```text
 chain identity
@@ -642,1352 +1068,383 @@ authority commitment
 
 The exact representation MUST be deterministic and versioned.
 
-A checkpoint is evidence.
-
-It is not automatically a proof of canonicality.
+A checkpoint is evidence until the required canonicality predicate has been verified.
 
 ---
 
-# 18. PoC-0
+# 28. PoC versus proof
 
-PoC-0 establishes that the required Materios information can be extracted from a real Materios node without modifying Materios.
+Evidence extraction is not equivalent to proof.
 
-The conceptual flow is:
+A successful adapter that retrieves:
 
-```text
-Materios node
-      ↓
-JSON-RPC
-      ↓
-finalized head
-      ↓
-header
-      ↓
-block hash / state root
-      ↓
-runtime information
-      ↓
-GRANDPA Runtime API
-      ↓
-authority list / set ID
-      ↓
-CanonicalCheckpoint
-```
+- finalized headers;
+- state roots;
+- runtime APIs;
+- authority lists;
 
-PoC-0 proves evidence extraction.
+does NOT by itself prove:
 
-It does NOT prove:
+- finality;
+- ancestry;
+- storage inclusion;
+- canonicality;
+- B3 security.
 
-* cryptographic finality;
-* ancestry;
-* storage inclusion;
-* canonical external state;
-* B3.
-
-The adapter remains untrusted.
+The project MUST preserve this distinction in all readiness documentation.
 
 ---
 
-# 19. GRANDPA Verification Path
+# 29. Off-chain reference implementation
 
-The B3 path requires independent verification of the external consensus evidence.
-
-The Materios investigation establishes that the relevant runtime exposes:
-
-```text
-GrandpaApi::grandpa_authorities()
-GrandpaApi::current_set_id()
-```
-
-The adapter SHOULD use the public Runtime API rather than infer authority information from arbitrary internal pallet storage.
-
-The verification path must ultimately establish:
-
-* correct chain;
-* correct checkpoint;
-* correct authority set;
-* correct set ID;
-* valid authority signatures;
-* valid authority weights;
-* sufficient quorum;
-* correct target;
-* required ancestry;
-* authority-set transitions where applicable.
-
-The exact proof stages are defined by the PoC specifications.
-
----
-
-# 20. GRANDPA Cryptography
-
-The cryptographic algorithm used by the verifier MUST correspond to the actual Materios runtime.
-
-The current investigation identifies the relevant GRANDPA authority/signature path as Ed25519.
-
-The implementation MUST NOT substitute another signature scheme based on assumption.
-
-The relationship must remain consistent:
-
-```text
-Materios runtime
-      ↕
-RPC / SCALE representation
-      ↕
-PRE-RICH adapter
-      ↕
-independent verifier
-      ↕
-future Cardano verifier
-```
-
----
-
-# 21. Authority State
-
-The architecture distinguishes:
-
-```text
-Observed authority state
-```
-
-from:
-
-```text
-Trusted authority state
-```
-
-and:
-
-```text
-Cryptographically proven authority state
-```
-
-A trusted authority set may be used during an intermediate PoC.
-
-It MUST NOT be presented as B3.
-
-The final B3 architecture must establish the authority state required for verification without relying on an arbitrary off-chain authority declaration.
-
----
-
-# 22. Ancestry
-
-A valid signature and sufficient quorum do not automatically prove all properties required for finality.
-
-Where ancestry is necessary, the verifier MUST verify it.
-
-If required ancestry evidence is missing:
-
-```text
-REJECT
-```
-
-The verifier MUST NOT silently assume ancestry to be correct.
-
----
-
-# 23. State / Storage Proof
-
-Finality alone does not prove that the required application state existed in the finalized state.
-
-The complete B3 path therefore requires a binding between:
-
-```text
-checkpoint
-+
-state root
-+
-deterministic key
-+
-expected value
-+
-proof
-```
-
-The proof must establish inclusion of the expected value in the canonical state represented by the verified state root.
-
-A storage proof MUST NOT be accepted merely because a publisher supplies the expected value.
-
----
-
-# 24. Canonical Beacon Anchor
-
-Once external canonicality has been proven, PRE-RICH needs a Cardano representation of that result.
-
-Conceptually:
-
-```text
-CanonicalCheckpoint
-        +
-FinalityProof
-        +
-StateProof
-        ↓
-B3 verifier
-        ↓
-Canonical Beacon Anchor
-        ↓
-BeaconRegistry
-        ↓
-PrizeValidator
-```
-
-The anchor must bind:
-
-* round;
-* checkpoint reference;
-* root;
-* context;
-* proof or proof commitment;
-* canonicalization state.
-
----
-
-# 25. Anchor Uniqueness
-
-For a fixed round:
-
-```text
-| { x | ValidAnchor(x, roundId) } | <= 1
-```
-
-must hold.
+Off-chain code SHOULD mirror the authoritative economic calculations.
 
 However:
 
 ```text
-one-shot anchor
-≠
-canonicality
+reference implementation
+        ≠
+economic authority
 ```
 
-A one-shot Registry prevents multiple finalized anchors.
+The off-chain implementation MUST be tested against:
 
-It does not prove that the first submitted root was objectively correct.
+- canonical vectors;
+- boundary values;
+- adversarial values;
+- negative cases;
+- expiry cases;
+- class transitions;
+- overflow/rounding boundaries.
 
-B3 requires both:
-
-```text
-uniqueness
-+
-publisher-independent canonicality
-```
+Any divergence between on-chain and off-chain behavior is a conformance failure until resolved.
 
 ---
 
-# 26. Conflicting Roots
+# 30. Required V3 implementation mapping
 
-If:
-
-```text
-root_A != root_B
-```
-
-for the same canonical checkpoint, the system must not select one merely because:
-
-* it arrived first;
-* it was submitted by the configured relayer;
-* it has a valid publisher signature;
-* it was written to Cardano first.
-
-The reason one root is accepted and another rejected must be an objective verification rule.
-
----
-
-# 27. Beacon Derivation
-
-Once the canonical external state is established, the Beacon MUST be derived deterministically.
-
-Conceptually:
+For every normative economic requirement, conformance MUST be demonstrated through:
 
 ```text
-canonical root
-+
-canonical context
-+
-target
-+
-protocol version
+V3 normative rule
         ↓
-Beacon
+exact type field
+        ↓
+validator enforcement
+        ↓
+off-chain construction
+        ↓
+positive test
+        ↓
+negative test
+        ↓
+reproducible evidence
+        ↓
+CONFORMANCE VERDICT
 ```
 
-The Beacon must not be independently supplied by the frontend, backend or relayer.
-
-The game must consume the Beacon associated with the canonical round.
+A function name, comment, historical TODO status, or partial implementation is insufficient.
 
 ---
 
-# 28. Randomness Pipeline
+# 31. Required implementation areas
 
-The result pipeline is:
+The architecture currently identifies the following implementation boundaries.
+
+## P0 — Economic state
+
+Implement and verify:
+
+- V3 global economic state;
+- per-class state;
+- class exposure;
+- safety capital;
+- reserve protection;
+- mandatory future costs;
+- current active class;
+- highest class ever activated;
+- Jackpot state.
+
+## P0 — Economic helpers
+
+Implement and verify:
+
+- ClassPrice;
+- ClassExposure;
+- aggregate unresolved reserve;
+- EEV;
+- EffectivePool;
+- ProtectedCapital;
+- RawSurplus;
+- economic gate;
+- overflow/rounding behavior.
+
+## P0 — SALE
+
+Implement and verify:
+
+- class binding;
+- price;
+- issued count;
+- unresolved count;
+- exposure;
+- class cap;
+- saleability;
+- post-sale solvency;
+- atomic payment/state update.
+
+## P1 — Treasury
+
+Remove or isolate legacy percentage logic where it conflicts with V3.
+
+Verify protocol-controlled, liability-first behavior.
+
+## P1 — Lifecycle
+
+Verify:
+
+- reveal;
+- crystallization;
+- loss;
+- claim;
+- expiry;
+- post-expiry reveal;
+- no claim resurrection.
+
+## P2 — Jackpot
+
+Verify:
+
+- raw-surplus funding;
+- locked state;
+- threshold;
+- cycle;
+- no double counting.
+
+## P2 — Beacon
+
+Verify the actual B1 path and separately track B3 target requirements.
+
+---
+
+# 32. Security properties
+
+The architecture requires the following properties.
+
+## 32.1 Economic safety
+
+No accepted transition may violate the normative solvency predicates.
+
+## 32.2 Deterministic outcome
+
+Identical validated inputs MUST produce the identical game result.
+
+## 32.3 No operator-selected result
+
+No ordinary operator, publisher, relayer, backend, or frontend may choose the economic outcome.
+
+## 32.4 No liability resurrection
+
+Expiry MUST permanently dissolve the expired payment commitment according to the normative state transition.
+
+## 32.5 No historical rewriting
+
+`HighestClassEverActivated` MUST NOT decrease.
+
+Historical ticket information MUST NOT be rewritten merely to create economic rights.
+
+## 32.6 Atomic settlement
+
+Economic state and the corresponding asset/state transition MUST agree atomically.
+
+---
+
+# 33. Failure model
+
+The architecture assumes failure of off-chain components.
+
+Possible failures include:
+
+- frontend unavailable;
+- backend unavailable;
+- indexer stale;
+- relayer offline;
+- external adapter unavailable;
+- invalid evidence;
+- malformed proof;
+- stale oracle;
+- invalid transaction construction.
+
+The protocol MUST reject invalid state rather than relying on an operator to repair it.
+
+Where a component is required for liveness but not correctness, that distinction MUST be documented explicitly.
+
+---
+
+# 34. Implementation-status language
+
+Repository documentation MUST use precise status terms.
+
+### DONE
+
+Use only when:
+
+- normative requirement is fixed;
+- code enforces it;
+- off-chain construction agrees;
+- positive and negative tests exist;
+- evidence is reproducible;
+- no known legacy contradiction remains.
+
+### PARTIAL
+
+Use when meaningful implementation exists but conformance is incomplete.
+
+### GAP
+
+Use when required implementation is absent or materially inconsistent.
+
+### TARGET
+
+Use for a defined future architecture not currently implemented.
+
+### UNKNOWN
+
+Use when available evidence is insufficient to determine behavior.
+
+Historical `IMPLEMENTED` claims MUST NOT override these rules.
+
+---
+
+# 35. Repository and documentation consistency
+
+The following documents MUST remain mutually consistent:
 
 ```text
-Canonical Beacon
-       +
-Player secret
-       +
-Ticket identity / nonce
-       +
-Game version
-       ↓
-deriveTicketSeed
-       ↓
-deriveSymbolsSeed
-       ↓
-generateSymbols
-       ↓
-classifyTier
-       ↓
-prizeAmountForTier
-```
-
-Every step must be deterministic.
-
-The player MUST NOT be able to supply:
-
-* symbols;
-* tier;
-* payout;
-
-as authoritative reveal data.
-
-The frontend may reproduce the same computation for display.
-
----
-
-# 29. Randomness Security
-
-The randomness architecture MUST prevent:
-
-* post-commit result selection;
-* relayer-controlled results;
-* backend-controlled results;
-* frontend-controlled results;
-* cross-ticket substitution;
-* cross-round substitution;
-* replay;
-* modulo bias where applicable;
-* ambiguous encoding;
-* domain collision.
-
-Where rejection sampling is required, it must be deterministic and consistently implemented on-chain and off-chain.
-
----
-
-# 30. Symbol Generation
-
-The symbol vector is a derived value.
-
-The current game defines five ordinary symbols:
-
-```text
-1 2 3 4 5
-```
-
-The vector MUST be generated from the canonical randomness path.
-
-A user-provided vector must never override the validator's derivation.
-
----
-
-# 31. Tier Calculation
-
-The prize tier is derived from the symbol vector.
-
-The tier is not an independently supplied input.
-
-The authoritative path is:
-
-```text
-verified inputs
+CONSTITUTION.md
       ↓
-symbols
+Game-Economy.md
       ↓
-tier
-```
-
-not:
-
-```text
-user input
+Game-Economy-Specification.md
       ↓
-tier
-```
-
----
-
-# 32. Prize Calculation
-
-The prize amount is derived from the authoritative tier and the economic state defined by the current game rules.
-
-At reveal, the payout must become fixed.
-
-Conceptually:
-
-```text
-Reveal
-  ↓
-Symbols
-  ↓
-Tier
-  ↓
-Payout
-  ↓
-Payout frozen
-```
-
-Future changes to the prize pool must not modify a payout already crystallized for a revealed ticket.
-
----
-
-# 33. PrizePool
-
-The PrizePool is an economic/funding mechanism.
-
-It is NOT inherently a randomness source.
-
-The architecture therefore distinguishes:
-
-```text
-Beacon
-=
-game randomness input
-```
-
-from:
-
-```text
-PrizePool
-=
-funding / prize liquidity
-```
-
-If a future game design uses the PrizePool as part of random prize allocation, that relationship must be explicitly specified and there must remain exactly one authoritative randomness path.
-
-The legacy PrizePool implementation must not be interpreted as an independent randomness oracle.
-
----
-
-# 34. Effective Pool
-
-The future economic model must distinguish:
-
-```text
-total treasury assets
-```
-
-from:
-
-```text
-effective available liquidity
-```
-
-Pending liabilities and already crystallized winning payouts must not be counted as freely available liquidity.
-
-The exact `effectivePool` implementation is a protocol requirement and must be verified on-chain before being treated as complete.
-
----
-
-# 35. Jackpot
-
-The jackpot is an economic protocol rule, not an administrator decision.
-
-Its activation must eventually depend on verifiable on-chain conditions.
-
-Conceptually:
-
-```text
-effectivePool
+architecture-spec.md
       ↓
-jackpot threshold
+state / transition specifications
       ↓
-jackpot active
-```
-
-The jackpot winner must be selected from canonical randomness.
-
-No backend, relayer or administrator may select the jackpot winner.
-
-Until the complete mechanism is implemented and verified, jackpot behavior remains a target property rather than a completed implementation.
-
----
-
-# 36. Treasury
-
-The Treasury is responsible for:
-
-* receiving protocol revenue;
-* threshold logic;
-* configured distribution;
-* reserve management;
-* prize funding;
-* configured relayer reward.
-
-The Treasury does not determine:
-
-* ticket result;
-* Beacon;
-* symbols;
-* tier.
-
-Treasury logic must remain independent from game-result derivation.
-
----
-
-# 37. Treasury Distribution
-
-Distribution must be deterministic according to the configured protocol parameters.
-
-The current operational model includes configurable categories such as:
-
-```text
-Prize
-Stake
-Reserve
-Relayer reward
-```
-
-The exact percentages are configuration parameters.
-
-They do not grant discretionary ownership to the relayer, team or administrator.
-
----
-
-# 38. Claim
-
-Claim must be permissionless within the protocol's rules.
-
-A valid claim requires:
-
-* valid ticket;
-* valid ownership where required;
-* revealed state;
-* valid payout state;
-* unclaimed state;
-* valid transaction conditions.
-
-The payout is the amount frozen during reveal.
-
-The protocol must reject a second claim.
-
----
-
-# 39. Claim and Burn Separation
-
-Claim and burn are distinct operations.
-
-The protocol MUST NOT require destruction of the ticket merely to prove that a claim occurred.
-
-A winning ticket may remain on-chain after claim as a historical collectible.
-
-If the owner voluntarily burns the ticket, that burn does not itself create a new economic right.
-
----
-
-# 40. Expiry
-
-The ticket lifecycle includes an expiry parameter.
-
-The initial intended validity period is at least:
-
-```text
-365 days
-```
-
-The expiry should be determined from issuance:
-
-```text
-expiresAt =
-issuedAt + minimum validity
-```
-
-It must not be silently extended by reveal timing.
-
-The exact expiry implementation must be enforced by the validator.
-
----
-
-# 41. Historical Reveal
-
-Where permitted by the game rules, an expired ticket may still be revealed for historical purposes.
-
-Conceptually:
-
-```text
-expired ticket
+implementation
       ↓
-historical reveal
-      ↓
-WIN / LOSS
+tests / evidence
 ```
 
-A historical reveal after economic expiry must not automatically recreate an expired economic claim.
+If implementation disagrees with the normative economic model, the implementation is non-conformant unless an explicit new normative decision changes the model.
+
+A legacy implementation MUST NOT silently redefine the specification.
 
 ---
 
-# 42. Orynq
+# 36. Open-source readiness boundary
 
-Orynq is an evidence and audit layer.
+Making the repository publicly visible is distinct from declaring a reference implementation frozen.
 
-It may provide:
+PRE-RICH may be described as:
 
-* receipt information;
-* transaction references;
-* commitment/reveal hashes;
-* Materios batch roots;
-* proof digests;
-* audit bundles;
-* dispute-resolution evidence.
+```text
+OPEN-SOURCE CANDIDATE
+```
 
-Orynq is NOT the final economic authority.
+while implementation conformance remains open.
 
-The economic decision remains subject to the Cardano protocol rules.
+A final reference freeze requires, at minimum:
+
+- normative economic documents aligned;
+- architecture aligned;
+- no active legacy economic contradiction;
+- V3 economic state mapped to code;
+- critical state transitions implemented;
+- positive and negative conformance tests;
+- reproducible build/test evidence;
+- security/adversarial review;
+- B1 trust assumptions explicitly documented;
+- B3 claims limited to what is actually proven.
+
+The architecture MUST NOT use "mainnet-ready" unless the corresponding readiness gate has been satisfied.
 
 ---
 
-# 43. Receipt Verification
+# 37. Canonical architecture summary
 
-External receipts may be used as evidence.
+The PRE-RICH V3 architecture is:
 
-They must be bound to the relevant ticket and context.
+```text
+                  EXTERNAL WORLD
+                        │
+                        ▼
+                  OBSERVATION
+                        │
+                        ▼
+                     EVIDENCE
+                        │
+                ┌───────┴────────┐
+                │                │
+               B1               B3
+          trusted publisher   proof path
+                │                │
+                └───────┬────────┘
+                        ▼
+                 VERIFIED INPUT
+                        │
+                        ▼
+              CANONICAL CARDANO STATE
+                        │
+          ┌─────────────┼─────────────┐
+          │             │             │
+          ▼             ▼             ▼
+       Ticket       Economic       Beacon
+       State         State          State
+          │             │             │
+          └─────────────┼─────────────┘
+                        ▼
+                DETERMINISTIC RESULT
+                        │
+                        ▼
+                LIABILITY / RESERVE
+                        │
+                        ▼
+                  ECONOMIC GATE
+                        │
+                        ▼
+                ATOMIC SETTLEMENT
+                        │
+             ┌──────────┴──────────┐
+             ▼                     ▼
+           CLAIM                 EXPIRE
+             │                     │
+             ▼                     ▼
+       settled liability     dissolved commitment
+```
 
-Relevant fields may include:
+The governing principle is:
 
-* ticket ID;
-* purchase transaction;
-* commitment;
-* reveal;
-* game version;
-* result;
-* external root;
-* context;
-* proof digest.
-
-A receipt MUST NOT be accepted as an authority merely because it is signed or published.
-
-Its relevant claims must be supported by the verification path required by the protocol.
+> **Truth is established by verifiable state and deterministic rules; economic authority is never delegated to a convenience component.**
 
 ---
 
-# 44. Data Encoding
+# 38. Final architectural verdict
 
-All cryptographically relevant data must have deterministic encoding.
+**V3 ECONOMIC ARCHITECTURE: SEMANTICALLY CONSOLIDATED**
 
-The specification must define:
+**V3 IMPLEMENTATION CONFORMANCE: OPEN**
 
-* field ordering;
-* integer encoding;
-* byte ordering;
-* byte lengths;
-* domain separation;
-* versioning;
-* empty-value representation.
+**CURRENT BEACON MODEL: B1 / TRUST-ASSUMED**
 
-TypeScript and Plutus implementations must agree.
+**B3: TARGET, NOT CLAIMED AS CURRENTLY COMPLETE**
 
-Golden vectors are mandatory for critical cryptographic derivations.
+**LEGACY 75/10/10/5 TREASURY SPLIT: NON-CANONICAL**
 
----
+**CLAIM ≠ BURN**
 
-# 45. TypeScript / Plutus Parity
+**EXPIRY DISSOLVES PAYMENT COMMITMENT; LATE REVEAL CANNOT CREATE CLAIMABILITY**
 
-The following implementations must remain semantically aligned:
+**OPEN-SOURCE REFERENCE FREEZE: BLOCKED BY IMPLEMENTATION / CONFORMANCE, NOT BY FURTHER ECONOMIC THEORY REDESIGN**
 
-```text
-TypeScript
-    ↕
-Plutus
-    ↕
-Datum
-    ↕
-Redeemer
-    ↕
-Tests
-```
-
-A frontend calculation is useful only if it reproduces the canonical on-chain result.
-
-A discrepancy must be treated as a protocol defect.
-
----
-
-# 46. Fail-Closed Security
-
-If a required verification condition cannot be established:
-
-```text
-REJECT
-```
-
-must be the default.
-
-Examples:
-
-```text
-invalid proof
-    → reject
-
-missing finality evidence
-    → reject
-
-missing ancestry
-    → reject
-
-wrong checkpoint
-    → reject
-
-wrong round
-    → reject
-
-stale proof
-    → reject
-
-conflicting canonical root
-    → reject
-
-invalid Beacon
-    → reject
-```
-
-The system MUST NOT fall back silently to a trusted value.
-
----
-
-# 47. No Trusted Fallback
-
-The following patterns are prohibited:
-
-```text
-proof verification failed
-        ↓
-use relayer value
-```
-
-```text
-canonical anchor missing
-        ↓
-use backend Beacon
-```
-
-```text
-storage proof missing
-        ↓
-trust supplied root
-```
-
-```text
-oracle unavailable
-        ↓
-use browser calculation
-```
-
-A failed proof path must not silently become a trusted path.
-
----
-
-# 48. Replay Protection
-
-All protocol evidence and actions must be context-bound.
-
-Protection must exist against:
-
-* reveal replay;
-* claim replay;
-* proof replay;
-* Beacon replay;
-* cross-round substitution;
-* cross-game substitution;
-* stale checkpoints;
-* duplicate canonicalization;
-* duplicate payouts.
-
----
-
-# 49. Reference Inputs
-
-Reference inputs may be used to expose canonical Beacon state to the PrizeValidator.
-
-The validator must verify that the reference input:
-
-* corresponds to the correct round;
-* contains the expected canonical state;
-* satisfies the active Beacon trust model;
-* has the correct identity;
-* is not stale;
-* cannot be substituted with an arbitrary datum.
-
-A reference input is not automatically trustworthy merely because it is present in the transaction.
-
----
-
-# 50. Registry
-
-The BeaconRegistry is intentionally small.
-
-Its role is to expose the canonical Beacon associated with a round.
-
-It is not itself the external oracle.
-
-The Registry MUST NOT silently substitute a backend-provided Beacon if the required canonical anchor is absent.
-
-The Registry is therefore an adapter between:
-
-```text
-verified canonical state
-```
-
-and:
-
-```text
-game state
-```
-
----
-
-# 51. Registry State Machine
-
-The intended Registry lifecycle is:
-
-```text
-Pending
-   ↓
-Ready / Canonical
-```
-
-The transition to canonical state must satisfy the active trust model.
-
-Under B1:
-
-```text
-authorized publisher
-```
-
-is part of the trust boundary.
-
-Under B3:
-
-```text
-proof / authenticated L1 mechanism
-```
-
-must determine acceptance independently of publisher identity.
-
----
-
-# 52. B3 Canonicality Requirements
-
-A B3 implementation MUST satisfy at least:
-
-1. deterministic checkpoint;
-2. fixed round/checkpoint binding;
-3. verified finality;
-4. correct authority state;
-5. authority transition handling where required;
-6. ancestry verification where required;
-7. state/storage proof;
-8. proof binding to state root;
-9. proof binding to deterministic key;
-10. on-chain verifiability;
-11. publisher independence;
-12. conflicting-root rejection;
-13. stale-proof rejection;
-14. replay protection;
-15. one-shot canonicalization;
-16. Beacon derivation exclusively from canonical state.
-
-B3 MUST NOT be declared complete merely because an anchor UTxO exists.
-
----
-
-# 53. B3 Proof Pipeline
-
-The target external-proof architecture is:
-
-```text
-                   MATERIOS
-                      │
-                      ▼
-             PRE-RICH ADAPTER
-                      │
-          ┌───────────┴───────────┐
-          │                       │
-          ▼                       ▼
-     checkpoint              external evidence
-          │                       │
-          └───────────┬───────────┘
-                      ▼
-              finality verifier
-                      │
-                      ▼
-                state root
-                      │
-                      ▼
-              storage verifier
-                      │
-                      ▼
-              canonical proof
-                      │
-                      ▼
-              Cardano verifier
-                      │
-                      ▼
-             Canonical Anchor
-                      │
-                      ▼
-                 Beacon
-                      │
-                      ▼
-              PrizeValidator
-```
-
-The adapter/prover remains untrusted throughout the pipeline.
-
----
-
-# 54. Proof System Selection
-
-The exact proof system is an implementation decision.
-
-The architecture MUST NOT make the Constitution dependent on a specific proving technology.
-
-Possible implementations may include:
-
-* direct cryptographic verification;
-* specialized Cardano verifier;
-* succinct proof;
-* recursive proof;
-* Halo2-based verifier;
-* another formally suitable proof system.
-
-The chosen system must satisfy the B3 predicate and Cardano execution constraints.
-
-Technology choice must not weaken the trust model.
-
----
-
-# 55. Security Model for External Proofs
-
-A proof generator may be malicious.
-
-The protocol must remain secure under:
-
-```text
-malicious adapter
-malicious proof generator
-malicious relayer
-malicious backend
-malicious frontend
-```
-
-provided the cryptographic assumptions of the verifier hold.
-
-The expected failure mode is:
-
-```text
-invalid proof
-     ↓
-Cardano rejection
-```
-
-not:
-
-```text
-invalid proof
-     ↓
-trusted fallback
-```
-
----
-
-# 56. Deployment States
-
-PRE-RICH must explicitly identify the trust state of each deployment.
-
-## B1 operational deployment
-
-```text
-publisher-authorized Beacon
-```
-
-Trust assumption:
-
-```text
-configured publisher
-```
-
-## B2 deployment
-
-```text
-committee-attested Beacon
-```
-
-Trust assumption:
-
-```text
-committee threshold
-```
-
-## B3 deployment
-
-```text
-publisher-independent canonical state
-```
-
-Trust assumption:
-
-```text
-cryptographic / Cardano verification
-```
-
-A deployment must never be described as B3 while operating under B1 assumptions.
-
----
-
-# 57. Development Roadmap
-
-The architecture evolves through progressively stronger verification.
-
-```text
-PoC-0
-Materios evidence extraction
-        ↓
-PoC-1A
-GRANDPA cryptographic verification
-        ↓
-PoC-1B
-ancestry / complete justification
-        ↓
-PoC-1C
-authority-state transition verification
-        ↓
-PoC-2
-state / storage proof
-        ↓
-PoC-3
-complete canonicality proof
-        ↓
-PoC-4
-Cardano-compatible succinct verification
-        ↓
-B3
-canonical external state enforced by Cardano
-```
-
-A later stage must not be assumed merely because an earlier stage succeeds.
-
----
-
-# 58. Preprod Gate
-
-Before preprod, the following must be reviewed:
-
-### Game
-
-* ticket minting;
-* ticket uniqueness;
-* commitment;
-* reveal;
-* deterministic symbol generation;
-* tier calculation;
-* payout;
-* claim;
-* double-claim protection;
-* ownership;
-* transfer;
-* expiry.
-
-### Beacon
-
-* active trust model;
-* Registry identity;
-* round binding;
-* target binding;
-* reference-input selection;
-* stale rejection;
-* conflicting-root rejection;
-* adversarial Beacon tests.
-
-### Materios
-
-* runtime identity;
-* GRANDPA algorithm;
-* authority representation;
-* set ID;
-* finality evidence;
-* ancestry requirements;
-* authority transitions;
-* storage-proof requirements.
-
-### B3
-
-* canonical checkpoint;
-* proof statement;
-* proof binding;
-* publisher independence;
-* Cardano verification;
-* one-shot canonicalization;
-* replay protection;
-* stale-proof rejection.
-
-### Treasury
-
-* threshold;
-* distribution percentages;
-* reserve;
-* prize funding;
-* relayer reward;
-* solvency.
-
-### Implementation
-
-* Plutus review;
-* TypeScript review;
-* golden vectors;
-* datum/redeemer parity;
-* frontend secret handling;
-* backend non-authority;
-* relayer non-authority.
-
----
-
-# 59. Failure Philosophy
-
-The protocol is designed around:
-
-> **Security before convenience.**
-
-When an input cannot be established as valid, the protocol must reject it.
-
-The architecture therefore prefers:
-
-```text
-temporary unavailable
-```
-
-over:
-
-```text
-incorrectly accepted
-```
-
-and:
-
-```text
-claim delayed
-```
-
-over:
-
-```text
-invalid payout
-```
-
-and:
-
-```text
-proof rejected
-```
-
-over:
-
-```text
-unverified external state accepted
-```
-
----
-
-# 60. Architectural Invariants
-
-The following invariants apply to the complete system.
-
-## I1 — No trusted result authority
-
-No off-chain component may choose the ticket result.
-
-## I2 — On-chain economic enforcement
-
-Economic validity must be enforceable by Cardano.
-
-## I3 — Commitment before reveal
-
-The player must commit before the result can become known.
-
-## I4 — Deterministic result
-
-The same canonical inputs produce the same result.
-
-## I5 — Canonical Beacon
-
-The Beacon must derive from the active Beacon trust model.
-
-## I6 — Publisher independence at B3
-
-Canonicality must not depend on publisher identity.
-
-## I7 — Single canonical anchor
-
-A round must not have multiple finalized canonical roots.
-
-## I8 — No conflicting-root choice by operator
-
-The first publisher cannot determine truth.
-
-## I9 — Proof over authority
-
-Where B3 is required, proof must replace trust.
-
-## I10 — Fail closed
-
-Missing or invalid proof results in rejection.
-
-## I11 — Single claim
-
-A payout can be claimed at most once.
-
-## I12 — Frozen payout
-
-Reveal determines the payout; later pool changes do not rewrite it.
-
-## I13 — Ticket transferability
-
-Transfer must not alter the ticket's cryptographic identity or result.
-
-## I14 — Backend non-authority
-
-Backend failure cannot create or invalidate economic truth.
-
-## I15 — Relayer non-authority
-
-Relayer failure cannot create or alter economic truth.
-
-## I16 — Adapter non-authority
-
-Adapter output is evidence until verified.
-
-## I17 — Treasury separation
-
-Treasury operations cannot determine game outcomes.
-
-## I18 — Cryptographic parity
-
-Off-chain reproductions must match the on-chain derivation.
-
----
-
-# 61. Architecture Rule
-
-When two implementation choices are available, the preferred choice is the one that:
-
-1. reduces trust assumptions;
-2. increases on-chain verifiability;
-3. fails closed;
-4. preserves determinism;
-5. removes operator discretion;
-6. remains permissionless;
-7. preserves previously verified invariants.
-
-Convenience alone is not a sufficient reason to introduce a trusted component.
-
----
-
-# 62. Final Architecture
-
-The intended final PRE-RICH architecture is:
-
-```text
-                         USER
-                           │
-                           ▼
-                       WALLET
-                           │
-                           ▼
-                     FRONTEND
-                           │
-                           │
-                           ▼
-                    ┌─────────────┐
-                    │  CARDANO    │
-                    │    L1       │
-                    └──────┬──────┘
-                           │
-             ┌─────────────┼──────────────┐
-             │             │              │
-             ▼             ▼              ▼
-          TICKET        BEACON         TREASURY
-          STATE         ANCHOR          STATE
-             │             │
-             │             ▼
-             │       CANONICAL B3
-             │         VERIFIER
-             │             ▲
-             │             │
-             │       PROOF ADAPTER
-             │             ▲
-             │             │
-             │         MATERIOS
-             │
-             ▼
-       COMMIT / REVEAL
-             │
-             ▼
-       TICKET SEED
-             │
-             ▼
-          SYMBOLS
-             │
-             ▼
-           TIER
-             │
-             ▼
-          PAYOUT
-             │
-             ▼
-           CLAIM
-```
-
-The architectural authority flows toward Cardano.
-
-External systems may provide evidence.
-
-Off-chain services may facilitate execution.
-
-But the final economic truth must be determined by verifiable protocol rules.
-
----
-
-# 63. Final Principle
-
-PRE-RICH is not designed around the assumption that its operators are honest.
-
-It is designed so that operator honesty becomes progressively less relevant.
-
-The final architecture therefore follows:
-
-```text
-Observe
-   ↓
-Prove
-   ↓
-Verify
-   ↓
-Anchor
-   ↓
-Derive
-   ↓
-Settle
-```
-
-and never:
-
-```text
-Observe
-   ↓
-Trust
-   ↓
-Settle
-```
-
-The long-term objective is:
-
-> **People may operate the infrastructure, but people must not control the truth.**
+This document is therefore the architectural bridge between the consolidated V3 economic model and the remaining implementation audit.
