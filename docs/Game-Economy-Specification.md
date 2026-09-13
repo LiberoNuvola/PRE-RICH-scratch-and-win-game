@@ -84,6 +84,8 @@ Effective payout
 
 500 × P
 
+Therefore:
+
 MaximumNormalPayout(P) = 500 × P
 
 Payout values must be represented with integer arithmetic in the canonical economic unit/subunits.
@@ -374,7 +376,7 @@ Transfer must preserve ticket identity, commitment, round and game configuration
 
 The economic right follows the ticket.
 
-A revealed but unclaimed winning ticket may be transferable where the protocol permits it; the frozen payout remains attached to that ticket.
+A revealed but unclaimed winning ticket may be transferable where the protocol permits it; the frozen payout remains attached to the ticket.
 
 Transfer must never duplicate the economic claim.
 
