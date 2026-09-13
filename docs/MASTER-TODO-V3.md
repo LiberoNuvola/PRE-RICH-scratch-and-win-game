@@ -1,526 +1,1157 @@
-#Pre-Rich Master To Do list V3
+# PRE-RICH — Master TODO V3
 
-============================================================
+**Protocol baseline:** Constitution V3 — Deterministic Economy  
+**Purpose:** implementation and conformance tracker for the V3 normative economic model.
 
-FASE 1 — ECONOMIC CORE
+> **Critical status rule:** historical implementation claims are evidence of repository history, not proof of V3 conformance. Every item must be evaluated as **V3 requirement → current code → tests → reproducible evidence → verdict**.
 
-TODO-01 — Canonical USDM valuation layer
+---
 
-[x] Implementato il layer economico canonico Economic condiviso per la valorizzazione USDM.
+# 0. STATUS MODEL
 
-[x] Unificata la logica di:
+Use only these statuses:
 
-conversione asset → USDM
-precisione
-rounding
-gestione ADA
-gestione degli asset supportati
-freshness oracle
+- `DONE` — normative rule, implementation, tests and evidence agree.
+- `PARTIAL` — meaningful implementation exists, but one or more V3 requirements remain unverified/incomplete.
+- `GAP` — V3 requirement is not currently enforced.
+- `TARGET` — future architecture/design.
+- `UNKNOWN` — insufficient evidence.
 
-[x] Economic è ora la sorgente canonica usata da Pool, PrizeValidator e MintPolicy.
+Do **not** use `IMPLEMENTED / VERIFICATION BLOCKED` as a substitute for a V3 conformance verdict.
 
-Status: IMPLEMENTED
+Historical code may be retained, but it must be labelled as historical/legacy where it does not implement the current V3 model.
 
-TODO-02 — Oracle authority
+---
 
-[ ] Implementare e verificare definitivamente l'autenticazione dell'Oracle State.
+# PHASE 1 — ECONOMIC STATE
 
-[ ] OracleStateId identifica il singleton Oracle State.
+## TODO-01 — Canonical V3 economic state
 
-[ ] Il reference input deve contenere esattamente una unità del singleton policy/name configurato, sullo stesso TxOut che contiene OracleDatum.
+**Requirement**
 
-[ ] Mantenere:
+Implement the canonical economic state defined by the V3 specification.
 
-validità temporale
-asset pair
-publisher authorization
-prezzo valido
+Required conceptual layers:
 
-Status: IMPLEMENTED / VERIFICATION BLOCKED
+```text
+Global Economic State
+Per-Class State
+Historical Control State
+Jackpot State
+```
 
-Motivo:
-la suite Haskell diretta esiste ma la compilazione Plutus viene terminata con SIGKILL per limite di memoria nell'ambiente corrente.
+Required economic concepts include:
 
-TODO-03 — Settlement asset model
+- CrystallizedLiabilities
+- UnresolvedReserve / class-aware unresolved exposure
+- SafetyCapital
+- ReserveProtection
+- MandatoryFutureCosts
+- CurrentActiveClass
+- HighestClassEverActivated
+- class price
+- issued count
+- unresolved count
+- class exposure
+- class cap
+- saleability
+- Jackpot state
 
-[ ] Formalizzare completamente il settlement asset nel modello dati.
+**Current verdict:** GAP / migration required.
 
-FASE 2 — TICKET PURCHASE
+---
 
-TODO-04 — Ticket purchase in USDM-equivalent
+## TODO-02 — V3 economic type schema
 
-[ ] Eliminare la dipendenza economica dal pagamento fisso di 1 ADA.
+Implement the target type model established by the V3 type specification.
 
-[ ] Il buyer deve poter pagare il prezzo nominale USDM tramite:
-USDM
-ADA
-asset supportati
+Required conceptual structures:
 
-[ ] La quantità fisica richiesta deve essere calcolata usando l'oracle autenticato.
+```haskell
+TicketClassState
+EconomicControlState
+JackpotState
+V3EconomicState
+```
 
-[ ] Il contratto deve verificare il valore economico.
+Stored state and derived values MUST remain explicitly distinguished.
 
-[ ] Il prezzo nominale del ticket deve restare quello dichiarato dal PrizeDatum.
+**Derived values include, where applicable:**
 
-Status: IMPLEMENTED / VERIFICATION BLOCKED
+```text
+ClassPrice
+EEV
+EffectivePool
+ProtectedCapital
+RawSurplus
+WorstCaseExposure
+```
 
-Nota:
-mirror/off-chain tests PASS; verifica Plutus on-chain bloccata dalla compilazione SIGKILL.
+**Current verdict:** GAP / legacy-partial types.
 
-TODO-05 — Prize settlement in USDM-equivalent
+---
 
-[ ] Il premio deve essere memorizzato economicamente in USDM.
+## TODO-03 — Economic state invariants
 
-[ ] Il vincitore deve poter ricevere il controvalore in un settlement asset supportato.
+Enforce and test:
 
-[ ] Il contratto deve verificare il valore ricevuto tramite il medesimo layer oracle canonico.
+```text
+EffectivePool >= 0
+RawSurplus = max(0, EEV - ProtectedCapital)
+```
 
-[ ] La selezione dell'asset non deve alterare il valore economico del premio.
+and:
 
-Status: IMPLEMENTED / VERIFICATION BLOCKED
+```text
+ClassExposure_i =
+    ClassPrice_i × UnresolvedCount_i
+```
 
-Nota:
-mirror/off-chain tests PASS; verifica Plutus on-chain bloccata dalla compilazione SIGKILL.
+```text
+WorstCaseExposure =
+    500 × Σ ClassExposure_i
+```
 
-FASE 3 — POOL ACCOUNTING
+with the canonical invariant governing any aggregate unresolved reserve.
 
-TODO-06 — Physical Pool accounting
+**Current verdict:** PARTIAL / requires V3 enforcement.
 
-[ ] Allineare completamente il valore fisico del Pool con la valorizzazione economica USDM.
+---
 
-[ ] Eliminare qualsiasi transizione dove il datum cambia economicamente senza movimento fisico verificabile.
+# PHASE 2 — ECONOMIC HELPERS
 
-[ ] Definire formalmente la relazione:
-Pool physical assets ↔ economic USDM value
+## TODO-04 — Canonical asset valuation
 
-Status: IMPLEMENTED / VERIFICATION BLOCKED
+Audit and conform the economic helper layer:
 
-Nota:
-B1PrizePool utilizza Economic.poolUsdmValue; mirror/off-chain tests PASS; verifica Plutus on-chain bloccata dalla compilazione SIGKILL.
+- `ceilingDiv`
+- oracle timestamp validity
+- oracle price selection
+- asset → USDM conversion
+- total USDM value
+- Pool USDM value
+- deterministic rounding.
 
-TODO-07 — Atomic claim
+**Rule**
 
-[ ] Il claim deve essere atomicamente collegato alla riduzione del Pool.
+A helper is not V3-conformant merely because an older checklist marked the Economic module implemented.
 
-[ ] La transazione deve dimostrare:
+**Current verdict:** PARTIAL / P0.2 conformance audit.
 
-consumo Prize UTxO
-consumo Pool UTxO
-pagamento al vincitore
-nuovo Pool UTxO
-nuova liquidità
-nuova liability
-stato Claimed
+---
 
-[ ] Il valore fisico distribuito deve corrispondere al valore economico
-detratto.
+## TODO-05 — Oracle authority
 
-TODO-08 — Single claim path
+Verify:
 
-[ ] Eliminare i percorsi claim concorrenti.
+- singleton Oracle State identity;
+- correct reference input;
+- asset pair;
+- authorized publisher/authority;
+- valid price;
+- valid timestamp;
+- deterministic conversion.
 
-[ ] Mantenere un solo flusso canonico:
+Invalid, stale, missing or mismatched oracle state MUST reject any transition requiring that valuation.
 
-UI → claimFlow canonical → Pool + Prize → settlement
+**Current verdict:** PARTIAL / verification required.
 
-[ ] Rimuovere codice legacy incompatibile.
+---
 
-FASE 4 — TICKET CLASSES
-TODO-09 — Canonical ticket ladder
+## TODO-06 — EEV methodology
 
-[ ] Implementare la ladder:
+Reconcile implementation with the normative EEV methodology:
 
+- asset perimeter;
+- liquidation horizon;
+- oracle sources;
+- execution costs;
+- operational constraints.
+
+Do not replace EEV with:
+
+- nominal wallet balance;
+- arbitrary haircut;
+- TVL;
+- global market depth;
+- browser-side market price.
+
+**Current verdict:** GAP/PARTIAL pending implementation audit.
+
+---
+
+# PHASE 3 — TICKET PURCHASE / SALE
+
+## TODO-07 — Canonical ticket ladder
+
+Implement and enforce:
+
+```text
+1 / 2 / 3 / 5 / 10 / 25 / 50 / 100 USDM
+```
+
+Genesis ticket price:
+
+```text
 1 USDM
-2 USDM
-3 USDM
-5 USDM
-10 USDM
-25 USDM
-50 USDM
-100 USDM
+```
 
-[ ] Il prezzo Genesis è 1 USDM.
+**Current verdict:** PARTIAL / must be bound to V3 class state.
 
-TODO-10 — CurrentActiveClass
+---
 
-[ ] Implementare:
+## TODO-08 — Genesis bootstrap
 
-CurrentActiveClass = highest class satisfying all economic safety constraints
+Enforce the canonical Genesis bootstrap threshold:
 
-[ ] Nessuna classe può essere vendibile se viola le condizioni di sicurezza.
+```text
+Treasury PRE value >= 4,000 USDM
+```
 
-TODO-11 — Automatic suspension
+The implementation MUST clearly distinguish bootstrap capital from PrizePool liquidity where required.
 
-[ ] Implementare degradazione:
+**Current verdict:** PARTIAL / conformance required.
 
+---
+
+## TODO-09 — Class-aware saleability
+
+For every class, saleability MUST be derived from the canonical economic state.
+
+A class MUST NOT be sold merely because an old implementation permits the transaction.
+
+The sale transition MUST account for:
+
+- class price;
+- unresolved count;
+- class exposure;
+- class cap;
+- current active class;
+- safety constraints;
+- post-sale state.
+
+**Current verdict:** GAP.
+
+---
+
+## TODO-10 — Atomic SALE
+
+The SALE transition MUST atomically establish:
+
+```text
+payment
++
+ticket identity
++
+class identity
++
+economic reservation
++
+required Pool/Treasury state
+```
+
+The resulting state MUST satisfy the V3 economic gate.
+
+**Current verdict:** PARTIAL / implementation conformance required.
+
+---
+
+# PHASE 4 — CLASS CONTROL
+
+## TODO-11 — CurrentActiveClass
+
+Implement:
+
+```text
+CurrentActiveClass =
+highest class satisfying all applicable economic safety constraints
+```
+
+It MUST be state-derived.
+
+It MUST NOT be an arbitrary operator-selected parameter.
+
+**Current verdict:** GAP/PARTIAL.
+
+---
+
+## TODO-12 — HighestClassEverActivated
+
+Persist:
+
+```text
+HighestClassEverActivated
+```
+
+It MUST be monotonic:
+
+```text
+new >= old
+```
+
+It MUST NOT decrease during contraction.
+
+It MUST NOT be reconstructed from the current active class after the fact.
+
+**Current verdict:** GAP/UNVERIFIED.
+
+---
+
+## TODO-13 — Hysteresis and contraction
+
+Implement the canonical contraction sequence:
+
+```text
 100 → 50 → 25 → 10 → 5 → 3 → 2 → 1 → HALT
+```
 
-[ ] La sospensione delle classi superiori non invalida i ticket esistenti.
+Contraction MUST:
 
-[ ] I premi già cristallizzati restano pagabili.
+- be state-derived;
+- preserve existing valid tickets;
+- preserve crystallized liabilities;
+- not erase historical highest activation.
 
-FASE 5 — SOLVENCY E EXPOSURE
-TODO-12 — Worst-case unresolved exposure
+**Current verdict:** GAP/PARTIAL.
 
-[ ] Formalizzare e implementare:
+---
 
-WorstCaseUnresolvedExposure = 500 × ppUnresolvedReserve
+## TODO-14 — Recovery / re-expansion
 
-[ ] Tale invariant deve essere verificabile on-chain.
+Define and enforce the conditions under which a previously contracted system may re-expand.
 
-TODO-13 — Per-class exposure
+Re-expansion MUST NOT violate the monotonicity of `HighestClassEverActivated`.
 
-[ ] Aggiungere esposizione aggregata per classe quando necessaria per
-determinare la vendibilità della classe.
+**Current verdict:** GAP / specification-to-code audit required.
 
-[ ] Una classe superiore non deve poter compromettere la solvibilità
-delle classi già attive.
+---
 
-TODO-14 — Issuance safety
+# PHASE 5 — EXPOSURE AND SOLVENCY
 
-[ ] Prima di emettere un nuovo ticket verificare che l'esposizione
-worst-case risultante sia compatibile con la liquidità disponibile.
+## TODO-15 — Per-class exposure
 
-[ ] La vendita deve essere preventiva rispetto all'incremento
-dell'esposizione.
+Implement:
 
-TODO-15 — Safety floor
+```text
+ClassExposure_i =
+    ClassPrice_i × UnresolvedCount_i
+```
 
-[ ] Definire e applicare il livello minimo di sicurezza economica.
+The class exposure MUST be available to the economic gate where required.
 
-[ ] Verificare che il sistema non venda nuovi ticket quando non può
-sostenere il relativo worst-case exposure.
+**Current verdict:** GAP.
 
-TODO-16 — HighestClassEverActivated
+---
 
-[ ] Conservare il massimo livello di classe mai attivato.
+## TODO-16 — Worst-case unresolved exposure
 
-[ ] Questo valore deve alimentare la logica jackpot.
+Implement:
 
-FASE 6 — TREASURY
-TODO-17 — Treasury V3
+```text
+WorstCaseExposure =
+    500 × Σ ClassExposure_i
+```
 
-[ ] Convertire Treasury dalla logica ADA-only alla logica economica USDM.
+An aggregate:
 
-[ ] Definire il meccanismo di valorizzazione tramite oracle.
+```text
+ppUnresolvedReserve
+```
 
-TODO-18 — Distributable surplus
+is valid as an optimization/storage representation only when it is provably equal to the canonical class-aware exposure.
 
-[ ] Separare:
+The old formulation:
 
-gross revenue
-liabilities
-reserves
-locked funds
-distributable surplus
+```text
+500 × ppUnresolvedReserve
+```
 
-[ ] Il treasury deve distribuire esclusivamente il surplus effettivamente
-distribuibile.
+MUST NOT be treated as sufficient evidence of V3 conformance by itself.
 
-TODO-19 — Distribution split
+**Current verdict:** GAP/PARTIAL.
 
-[ ] Implementare:
+---
 
-75% PrizePool
-10% Reserve
-10% Stake
-5% Maintenance
+## TODO-17 — Issuance safety
 
-[ ] Applicare le percentuali al distributable surplus, non al lordo.
+Before issuance, evaluate the candidate post-sale state.
 
-TODO-20 — Relayer reward
+The sale MUST be rejected when the resulting exposure or protected-capital requirements violate the economic gate.
 
-[ ] Definire un reward bounded per il relayer.
+**Current verdict:** GAP.
 
-[ ] Il relayer non deve diventare una quota arbitraria del treasury.
+---
 
-FASE 7 — JACKPOT
-TODO-21 — Jackpot state machine
+## TODO-18 — Safety Capital
 
-[ ] Definire formalmente:
+Implement and enforce the canonical Safety Capital requirement.
 
-qualification
-threshold
-accumulation
-lock
-trigger
-winner
-payout
-reset
-TODO-22 — Jackpot accounting isolation
+Safety Capital MUST be included in protected capital before residual surplus is calculated.
 
-[ ] Il jackpot deve restare distinto dalla normale liquidità disponibile.
+**Current verdict:** GAP.
 
-[ ] ppLockedJackpot deve essere escluso da EffectivePool.
+---
 
-TODO-23 — Jackpot randomness
+## TODO-19 — Reserve Protection
 
-[ ] Integrare il jackpot con il sistema canonico di randomness.
+Implement explicit Reserve Protection.
 
-[ ] Nessuna selezione winner deve dipendere da frontend/relayer.
+Reserve-protected value MUST NOT be treated as free surplus.
 
-FASE 8 — BEACON / B1 / FUTURE B3
-TODO-24 — B1 clarification
+**Current verdict:** GAP/PARTIAL.
 
-[ ] Documentare e verificare definitivamente il trust boundary B1.
+---
 
-[ ] Il registry deve rimanere il punto di pubblicazione autorizzato.
+## TODO-20 — Post-state economic gate
 
-[ ] La validazione on-chain deve ricostruire indipendentemente il beacon.
+For transitions requiring it:
 
-TODO-25 — Future B3
+```text
+current state
+    ↓
+candidate transition
+    ↓
+post-state
+    ↓
+Economic Gate
+```
 
-[ ] Separare chiaramente le future estensioni B3 dalla sicurezza minima
-richiesta per B1.
+The gate MUST evaluate the state actually resulting from the transaction.
 
-[ ] Non introdurre dipendenze B3 prematuramente nel core economico.
+**Current verdict:** PARTIAL / requires complete V3 coverage.
 
-FASE 9 — OFF-CHAIN / UI / RELAYER
-TODO-26 — Canonical buy API
+---
 
-[ ] Unificare:
+# PHASE 6 — POOL ACCOUNTING
 
-selezione ticket class
-price USDM
-settlement asset
-oracle quote
-transaction building
-ticket mint
-TODO-27 — Settlement quote
+## TODO-21 — Physical/economic Pool reconciliation
 
-[ ] Il frontend deve mostrare:
+Maintain the invariant:
 
-prezzo economico USDM
-asset scelto
-quantità richiesta
-oracle timestamp
-eventuale slippage/tolleranza applicabile
+```text
+physical assets
+      ↕
+verified USDM economic value
+```
 
-[ ] Il quote mostrato non deve essere la fonte della verità.
+The datum MUST NOT claim economic value that the transaction does not physically support.
 
-TODO-28 — Reveal
+**Current verdict:** PARTIAL.
 
-[ ] Allineare completamente il flow off-chain al validator on-chain.
+---
 
-[ ] Nessuna duplicazione incoerente della logica economica.
+## TODO-22 — EffectivePool
 
-TODO-29 — Claim
+Implement the canonical calculation:
 
-[ ] Riscrivere il claim builder per supportare settlement asset.
+```text
+EffectivePool =
+    EEV
+    - CrystallizedLiabilities
+    - UnresolvedReserve
+    - LockedJackpot
+```
 
-[ ] Eliminare il pagamento diretto in lovelace come rappresentazione
-del premio USDM.
+**Current verdict:** PARTIAL / V3 class-aware exposure integration required.
 
-[ ] Il Pool deve essere realmente drenato del valore distribuito.
+---
 
-TODO-30 — Remove legacy UI
+## TODO-23 — ProtectedCapital
 
-[ ] Rimuovere:
+Implement:
 
-legacyBindings.ts
-placeholder claim
-selezione ticket non collegata al mint
-percorsi legacy claim
+```text
+ProtectedCapital =
+      CrystallizedLiabilities
+    + WorstCaseExposure
+    + SafetyCapital
+    + ReserveProtection
+    + LockedJackpot
+    + MandatoryFutureCosts
+```
 
-[ ] La UI deve utilizzare esclusivamente l'architettura canonica.
+**Current verdict:** GAP.
 
-FASE 10 — TEST
-TODO-31 — Economic unit tests
+---
 
-[ ] Test per:
+## TODO-24 — RawSurplus
 
-conversione USDM
-rounding
-ticket prices
-payout formula
-effective pool
-reserve
-treasury split
-class activation
-TODO-32 — Adversarial oracle tests
+Implement:
 
-[ ] Testare:
+```text
+RawSurplus =
+    max(0, EEV - ProtectedCapital)
+```
 
-fake publisher datum
-fake oracle UTxO
-stale oracle
-asset mismatch
-missing oracle
-malicious extra assets
-TODO-33 — Pool tests
+No operation may create surplus by ignoring protected capital.
 
-[ ] Testare:
+**Current verdict:** GAP.
 
-physical conservation
-funding
-issue
-reveal
-claim
-expiry
-singleton NFT
-incorrect Pool outputs
-TODO-34 — Class tests
+---
 
-[ ] Testare:
+# PHASE 7 — REVEAL / CRYSTALLIZATION / CLAIM
 
-activation
-suspension
-recovery
-class ordering
-existing tickets after suspension
-TODO-35 — Exposure tests
+## TODO-25 — Deterministic reveal
 
-[ ] Testare:
+The validator MUST derive:
 
-worst-case exposure
-per-class exposure
-issuance at limit
-issuance above limit
-emergency HALT
-
-[ ] Distinguere chiaramente:
-
-mirror/unit tests
-emulator tests
-real Plutus validation tests
-FASE 11 — PREPROD
-TODO-36 — Deployment topology
-
-[ ] Deployare su Preprod:
-
-Treasury
-Counter
-BeaconRegistry
-PrizeValidator
-B1PrizePool
-MintPolicy
-oracle state
-
-[ ] Verificare tutti gli hash/address derivati.
-
-TODO-37 — Bootstrap
-
-[ ] Iniettare la liquidità/bootstrap prevista.
-
-[ ] Verificare che il bootstrap PRE non venga confuso automaticamente
-con la PrizePool liquidity.
-
-TODO-38 — Genesis activation
-
-[ ] Verificare on-chain:
-
-TreasuryPREValueUSDM >= 4,000 USDM
-
-[ ] Verificare attivazione Genesis.
-
-TODO-39 — Buy test
-
-[ ] Comprare un Genesis ticket utilizzando ADA.
-
-[ ] Verificare:
-
-quote oracle
-valore economico 1 USDM
-Treasury payment
-Pool reservation
-Counter increment
-Ticket NFT
-PrizeDatum
-
-[ ] Ripetere con USDM quando disponibile.
-
-TODO-40 — Beacon sync
-
-[ ] Pubblicare beacon autorizzato.
-
-[ ] Eseguire SyncBeacon su Preprod.
-
-[ ] Verificare stato Ready.
-
-TODO-41 — Reveal
-
-[ ] Eseguire reveal reale.
-
-[ ] Verificare:
-
-commitment
-beacon
-seed
+```text
+Beacon
++
+playerSecret
++
+ticket context
+↓
+ticketSeed
+↓
 symbols
-result
+↓
 tier
+↓
 payout
-Pool reserve/liability transition
-TODO-42 — Claim
+```
 
-[ ] Eseguire claim reale.
+The player MUST NOT submit authoritative symbols, tier or payout.
 
-[ ] Testare settlement in ADA.
+**Current verdict:** PARTIAL / conformance audit required.
 
-[ ] Testare settlement in USDM quando disponibile.
+---
 
-[ ] Verificare:
+## TODO-26 — Prize crystallization
 
-pagamento economicamente corretto
-Pool physical value decrement
-liquidity decrement
-liability decrement
-Prize = Claimed
-ticket NFT retained
-TODO-43 — Adversarial Preprod tests
+At reveal, a winning payout MUST be frozen according to the canonical result.
 
-[ ] Tentare transazioni volutamente invalide:
+The resulting liability MUST enter the correct economic state.
 
-fake oracle
-stale oracle
-incorrect payment
-incorrect payout
-incorrect Pool value
-double claim
-wrong owner
-wrong ticket class
-issuance beyond safety
-suspended class
-modified PrizeDatum
-modified PoolDatum
+**Current verdict:** PARTIAL.
 
-[ ] Ogni tentativo deve fallire on-chain.
+---
 
-DONE CRITERIA
+## TODO-27 — Atomic claim
 
-Il progetto è considerato pronto per una release di test pubblico solo quando:
+Claim MUST atomically reconcile:
 
-[ ] Economic denomination USDM è canonica.
+- ticket state;
+- PrizePool;
+- payment;
+- liability;
+- liquidity;
+- resulting Pool state.
 
-[ ] Settlement multi-asset è verificato on-chain.
+The physical value paid MUST correspond to the economic value deducted.
 
-[ ] Oracle authority è autenticata.
+**Current verdict:** PARTIAL.
 
-[ ] Pool accounting economico e fisico coincidono.
+---
 
-[ ] Ticket issuance è soggetta a safety/exposure constraints.
+## TODO-28 — CLAIM ≠ BURN
 
-[ ] Class ladder e suspension sono on-chain.
+Claim MUST NOT require ticket NFT burn.
 
-[ ] Claim è atomico e unico.
+The NFT MAY remain with the claimant according to protocol rules.
 
-[ ] Treasury V3 è implementato.
+Burn, if available, is a separate operation and MUST NOT change the economic result.
 
-[ ] Jackpot accounting è isolato.
+**Current verdict:** documentation aligned; implementation/test conformance to verify.
 
-[ ] Test adversarial passano.
+---
 
-[ ] Flusso completo BUY → SYNC → REVEAL → CLAIM funziona su Preprod.
+## TODO-29 — Expiry
 
-[ ] Sono presenti test Preprod con transazioni valide e transazioni
-intenzionalmente invalide.
+Expiry MUST dissolve the unclaimed payment commitment.
 
-REGOLA OPERATIVA
+A reveal after expiry MAY preserve historical information if the state machine permits it, but:
 
-Ogni modifica al codice deve:
+```text
+late reveal ≠ renewed claimability
+```
 
-riferirsi a uno o più TODO identificabili;
-mantenere invarianti già chiuse;
-aggiornare questo documento quando un TODO viene completato;
-aggiungere test prima di dichiarare completata una modifica critica;
-non introdurre una nuova fonte di verità economica parallela.
+A post-expiry reveal MUST NOT recreate a payment obligation.
+
+A claim relying on an expired economic right MUST fail.
+
+**Current verdict:** PARTIAL / adversarial tests required.
+
+---
+
+# PHASE 8 — TREASURY V3
+
+## TODO-30 — Treasury state migration
+
+Remove the economic role of legacy percentage fields:
+
+```text
+tdPrizePct
+tdStakePct
+tdReservePct
+tdMaintenancePct
+```
+
+They are migration debt when they encode the retired percentage-allocation model.
+
+**Current verdict:** GAP.
+
+---
+
+## TODO-31 — No fixed 75/10/10/5 split
+
+The historical:
+
+```text
+75% / 10% / 10% / 5%
+```
+
+allocation MUST NOT be implemented as canonical V3 economics.
+
+It may remain only as historical material.
+
+**Current verdict:** GAP in legacy implementation.
+
+---
+
+## TODO-32 — Treasury residual-surplus logic
+
+Treasury operations MUST use:
+
+```text
+EEV
+→ ProtectedCapital
+→ RawSurplus
+→ permitted transition
+```
+
+rather than percentage allocation from gross revenue.
+
+**Current verdict:** GAP.
+
+---
+
+## TODO-33 — Treasury atomicity
+
+Treasury movement and economic-state transition MUST be atomic.
+
+**Current verdict:** GAP/PARTIAL.
+
+---
+
+## TODO-34 — Relayer reward
+
+If a relayer execution reward exists, it MUST be:
+
+- bounded;
+- deterministic;
+- visible;
+- paid only from legitimately available value;
+- unable to alter the economic result.
+
+**Current verdict:** PARTIAL.
+
+---
+
+# PHASE 9 — JACKPOT
+
+## TODO-35 — Jackpot state
+
+Implement explicit Jackpot state including:
+
+- locked amount;
+- threshold;
+- status;
+- cycle;
+- applicable trigger;
+- payout/reset semantics.
+
+**Current verdict:** GAP/PARTIAL.
+
+---
+
+## TODO-36 — Jackpot isolation
+
+Ensure:
+
+```text
+LockedJackpot
+```
+
+is protected and excluded from free EffectivePool value.
+
+Prevent double counting.
+
+**Current verdict:** PARTIAL.
+
+---
+
+## TODO-37 — Jackpot funding
+
+Enforce:
+
+```text
+NewJackpot <= RawSurplus
+```
+
+followed by the applicable Economic Gate.
+
+There is no canonical fixed Jackpot funding percentage.
+
+**Current verdict:** GAP.
+
+---
+
+## TODO-38 — Jackpot randomness
+
+Winner selection MUST depend only on canonical validated randomness.
+
+Frontend, backend or relayer selection MUST NOT determine the winner.
+
+**Current verdict:** GAP/PARTIAL.
+
+---
+
+# PHASE 10 — BEACON / B1 / B3
+
+## TODO-39 — B1 conformance
+
+Verify the current B1 trust boundary:
+
+```text
+authorized publisher
+      ↓
+BeaconRegistry
+      ↓
+PrizeValidator
+```
+
+B1 MUST NOT be described as trustless B3.
+
+**Current verdict:** PARTIAL.
+
+---
+
+## TODO-40 — Beacon canonicality
+
+Ensure the validator does not treat arbitrary backend metadata as canonical Beacon evidence.
+
+**Current verdict:** PARTIAL.
+
+---
+
+## TODO-41 — B3 target
+
+Keep B3 clearly separated from the current B1 implementation.
+
+B3 requires publisher-independent canonicality through a valid proof and/or authenticated L1 anchor.
+
+**Current verdict:** TARGET.
+
+---
+
+# PHASE 11 — OFF-CHAIN CONFORMANCE
+
+## TODO-42 — Canonical buy flow
+
+Unify:
+
+```text
+class
+→ USDM price
+→ settlement asset
+→ oracle quote
+→ transaction construction
+→ issuance
+```
+
+The frontend MUST NOT become the economic authority.
+
+**Current verdict:** PARTIAL.
+
+---
+
+## TODO-43 — Reveal flow
+
+Off-chain reveal construction MUST mirror the authoritative validator logic exactly.
+
+No competing economic derivation may silently exist.
+
+**Current verdict:** PARTIAL.
+
+---
+
+## TODO-44 — Claim flow
+
+Claim builder MUST:
+
+- use the canonical claim path;
+- support the intended settlement model;
+- preserve NFT retention;
+- reconcile Pool/liability state;
+- reject expired economic rights.
+
+**Current verdict:** PARTIAL.
+
+---
+
+# PHASE 12 — TESTS AND PROOF
+
+## TODO-45 — Economic helper tests
+
+Test:
+
+- USDM conversion;
+- ceiling division;
+- rounding;
+- oracle validity;
+- EEV;
+- EffectivePool;
+- ProtectedCapital;
+- RawSurplus;
+- class exposure.
+
+**Current verdict:** PARTIAL.
+
+---
+
+## TODO-46 — Class adversarial tests
+
+Test:
+
+- activation;
+- contraction;
+- recovery;
+- wrong class;
+- sale above cap;
+- sale below safety floor;
+- monotonic highest class;
+- existing tickets after suspension.
+
+**Current verdict:** GAP/PARTIAL.
+
+---
+
+## TODO-47 — Exposure adversarial tests
+
+Test:
+
+- unresolved exposure;
+- per-class exposure;
+- worst-case exposure;
+- issuance at limit;
+- issuance above limit;
+- cross-class solvency;
+- emergency HALT.
+
+**Current verdict:** GAP.
+
+---
+
+## TODO-48 — Oracle adversarial tests
+
+Test:
+
+- fake Oracle UTxO;
+- wrong singleton;
+- stale timestamp;
+- asset mismatch;
+- missing oracle;
+- malicious extra assets;
+- invalid price;
+- unauthorized publisher.
+
+**Current verdict:** PARTIAL.
+
+---
+
+## TODO-49 — Treasury adversarial tests
+
+Test:
+
+- legacy percentage allocation;
+- unauthorized destination;
+- protected-capital withdrawal;
+- Jackpot double counting;
+- Reserve violation;
+- post-state insolvency;
+- invalid relayer reward.
+
+Every invalid transition MUST fail.
+
+**Current verdict:** GAP.
+
+---
+
+## TODO-50 — Expiry adversarial tests
+
+Explicitly test:
+
+```text
+reveal before expiry
+reveal after expiry
+claim before expiry
+claim after expiry
+late reveal → attempted claim
+```
+
+The critical invariant is:
+
+```text
+expiry dissolves payment commitment
+```
+
+**Current verdict:** GAP/PARTIAL.
+
+---
+
+## TODO-51 — Full lifecycle tests
+
+Test:
+
+```text
+BUY
+ ↓
+COMMIT
+ ↓
+BEACON
+ ↓
+REVEAL
+ ↓
+CRYSTALLIZE
+ ↓
+CLAIM
+```
+
+and the expiry branch:
+
+```text
+BUY
+ ↓
+COMMIT
+ ↓
+EXPIRY
+ ↓
+late reveal (if historically permitted)
+ ↓
+NO CLAIMABILITY
+```
+
+**Current verdict:** PARTIAL.
+
+---
+
+# PHASE 13 — PREPROD / REPRODUCIBILITY
+
+## TODO-52 — Deployment topology
+
+Deploy and verify, as applicable:
+
+- Treasury;
+- Counter;
+- BeaconRegistry;
+- PrizeValidator;
+- B1PrizePool;
+- MintPolicy;
+- Oracle state.
+
+Record script hashes and addresses.
+
+**Current verdict:** TARGET/PARTIAL.
+
+---
+
+## TODO-53 — Genesis activation
+
+Verify the canonical Genesis threshold on-chain.
+
+**Current verdict:** TARGET.
+
+---
+
+## TODO-54 — Real BUY
+
+Perform a real Preprod purchase and record:
+
+- oracle evidence;
+- economic price;
+- settlement asset;
+- Treasury payment;
+- Pool reservation;
+- Counter increment;
+- NFT;
+- PrizeDatum.
+
+**Current verdict:** TARGET.
+
+---
+
+## TODO-55 — Real REVEAL
+
+Record reproducible evidence for:
+
+- commitment;
+- Beacon;
+- seed;
+- symbols;
+- result;
+- tier;
+- payout;
+- Pool transition.
+
+**Current verdict:** TARGET.
+
+---
+
+## TODO-56 — Real CLAIM
+
+Record:
+
+- claimant authorization;
+- settlement;
+- Pool decrement;
+- liability decrement;
+- final ticket state;
+- NFT retention.
+
+**Current verdict:** TARGET.
+
+---
+
+## TODO-57 — Invalid Preprod transactions
+
+Execute and document rejection of:
+
+- fake oracle;
+- stale oracle;
+- incorrect payment;
+- incorrect payout;
+- incorrect Pool value;
+- double claim;
+- wrong owner;
+- wrong class;
+- sale beyond safety;
+- suspended class;
+- modified PrizeDatum;
+- modified PoolDatum;
+- post-expiry claim.
+
+**Current verdict:** TARGET.
+
+---
+
+# PHASE 14 — DOCUMENTATION AND OPEN-SOURCE FREEZE
+
+## TODO-58 — Normative document reconciliation
+
+Ensure agreement between:
+
+```text
+CONSTITUTION
+Game-Economy
+Game-Economy-Specification
+Treasury specification
+Commit-reveal design
+Architecture specification
+Gap Matrix
+Master TODO
+```
+
+No document may retain a retired economic rule as current.
+
+**Current verdict:** IN PROGRESS.
+
+---
+
+## TODO-59 — Source registry
+
+Maintain the canonical source relationship:
+
+```text
+Decision Register / Constitution
+          ↓
+Game-Economy.md
+          ↓
+Game-Economy-Specification.md
+          ↓
+implementation
+          ↓
+tests / proofs / artifacts
+```
+
+Historical documents remain useful as evidence but do not override the canonical hierarchy.
+
+**Current verdict:** PARTIAL.
+
+---
+
+## TODO-60 — Open-source status declaration
+
+The public repository MUST distinguish:
+
+```text
+economic model = consolidated
+implementation = under conformance migration
+B1 = interim trust model
+B3 = future target
+mainnet readiness = not claimed
+```
+
+**Current verdict:** PARTIAL / documentation reconciliation.
+
+---
+
+# FINAL V3 DEFINITION OF DONE
+
+The V3 implementation may be declared conformant only when all of the following are true:
+
+- [ ] V3 economic state exists in the implementation.
+- [ ] V3 economic helpers are verified.
+- [ ] Oracle authority is enforced.
+- [ ] EEV is implemented according to the normative methodology.
+- [ ] Class-aware exposure is enforced.
+- [ ] `HighestClassEverActivated` is monotonic.
+- [ ] `CurrentActiveClass` is state-derived.
+- [ ] Class caps and saleability are enforced.
+- [ ] SALE evaluates the resulting post-state.
+- [ ] EffectivePool is correct.
+- [ ] ProtectedCapital is correct.
+- [ ] RawSurplus is correct.
+- [ ] Treasury uses V3 residual-surplus semantics.
+- [ ] Legacy 75/10/10/5 allocation is retired from active economics.
+- [ ] Jackpot is isolated and protected.
+- [ ] Jackpot funding is bounded by RawSurplus.
+- [ ] Reveal deterministically derives the result.
+- [ ] Claim is atomic.
+- [ ] Claim does not require NFT burn.
+- [ ] Expiry dissolves the payment commitment.
+- [ ] Post-expiry reveal cannot recreate claimability.
+- [ ] Adversarial tests cover all economic boundaries.
+- [ ] Positive and negative tests agree with on-chain behavior.
+- [ ] Reproducible Preprod evidence exists.
+- [ ] Public documentation is internally consistent.
+- [ ] No legacy economic contradiction remains in normative documentation.
+- [ ] The resulting release can be independently audited.
+
+---
+
+# OPERATING RULE
+
+For every implementation change use:
+
+```text
+V3 normative requirement
+        ↓
+exact code location
+        ↓
+actual behavior
+        ↓
+positive test
+        ↓
+negative test
+        ↓
+reproducible evidence
+        ↓
+CONFORMANCE VERDICT
+```
+
+Never infer V3 conformance from an old `IMPLEMENTED` checkbox.
+
+Never change frozen economic semantics merely to make legacy code appear conformant.
+
+If legacy code conflicts with the frozen V3 model, **the code is the migration target, not the economic specification**.
