@@ -1,475 +1,358 @@
 PRE-RICH — Treasury Distribution Specification
 
 Protocol baseline: Constitution V3 — Deterministic Economy
-Scope: protocol Treasury, PrizePool funding, Reserve, Maintenance, Stake and relayer execution reward.
+Status: Normative reconciliation candidate — aligned with the frozen V3 economic model
+Scope: Protocol Treasury, PrizePool funding, Reserve protection, Jackpot protection, mandatory costs and permissionless execution rewards.
 
 1. Purpose
 
-The Treasury collects protocol revenue and distributes only the value that remains available after the protocol's existing economic obligations and safety requirements are satisfied.
+The Treasury is a protocol-controlled economic component. It receives protocol revenue and holds value that may be used to satisfy protocol obligations, maintain required safety capital, fund the protected PrizePool, maintain protected Jackpot liquidity, satisfy mandatory future costs and, only where permitted by the canonical economic state, support legitimate residual-surplus operations.
 
-Treasury distribution must be:
+Treasury behavior MUST be deterministic, protocol-controlled, verifiable on-chain, independent of discretionary operator allocation, and compatible with the Solvency/Viability Kernel.
 
-deterministic;
+The Treasury MUST NOT be a mechanism for discretionary personal, founder or team allocation.
 
-protocol-controlled;
-
-verifiable on-chain;
-
-independent of operator discretion;
-
-compatible with the PrizePool solvency model;
-
-denominated economically in USDM or verified USDM-equivalent value.
-
-The Treasury must never become a mechanism for discretionary personal allocation.
-
-2. Economic Denomination
+2. Canonical Economic Denomination
 
 USDM is the canonical economic unit.
 
-Treasury accounting may contain ADA, USDM and other supported assets, but economic thresholds, obligations and allocation decisions must be expressed in:
+The Treasury MAY physically hold USDM, ADA and other protocol-approved assets. When an economic decision depends on value rather than nominal quantity, the protocol MUST use the approved deterministic valuation mechanism.
 
-USDM
+asset quantity
+      ↓
+verified asset/USDM valuation
+      ↓
+USDM-equivalent economic value
 
-or in a deterministically verified USDM-equivalent value.
+A nominal asset balance MUST NOT substitute for a value-based economic threshold when prices are variable. Stale, missing, unauthorized or invalid valuation data MUST cause the relevant economic transition to fail when valuation is required.
 
-A nominal ADA balance must not be used as a substitute for an economic threshold when asset prices are variable.
+3. Treasury Authority
 
-3. Treasury Architecture
+The Treasury is protocol-controlled.
 
-The intended flow is:
+No human operator, backend, founder, team wallet or relayer may possess discretionary authority to determine winner, payout tier, payout amount, class activation, class contraction, unresolved exposure, safety capital, Reserve protection, Jackpot protection or distributable surplus.
 
-PLAYER
-   ↓
-PROTOCOL TREASURY
-   ↓
-OBLIGATION / SAFETY ACCOUNTING
-   ↓
-DISTRIBUTABLE SURPLUS
-   ├── PrizePool
-   ├── Reserve
-   ├── Stake
-   └── Maintenance
+A relayer MAY execute a valid permissionless transaction and MAY receive a separately defined execution reward if such reward is explicitly authorized by the canonical protocol rules. Execution authority is not economic authority.
 
-A relayer may execute a permissionless distribution transaction and receive an explicitly governed execution reward, but it is not a privileged economic beneficiary.
+There MUST NOT be a required path:
 
-There must be no required path:
+PLAYER → TEAM / OPERATOR WALLET → TREASURY
 
-PLAYER → TEAM WALLET → TREASURY
+4. Liability-First Economic Ordering
 
-4. Liability-First Distribution
+Treasury value MUST be evaluated according to the protocol's liability-first model:
 
-Treasury funds must be considered in the following order:
+1. Crystallized winning liabilities
+2. Unresolved-ticket exposure / reserve
+3. Safety Capital
+4. Reserve Protection
+5. Locked Jackpot
+6. Mandatory Future Costs
+7. Residual surplus
 
-crystallised winning liabilities;
+Only value remaining after all protected obligations and capital requirements may be treated as residual surplus.
 
-unresolved-ticket reserve;
+5. Executable Economic Value
 
-PrizePool safety capital;
+Let:
 
-locked Jackpot liquidity;
+EEV = ExecutableEconomicValue
 
-Reserve protection;
+EEV is the verified economic value that the protocol can legitimately use within the applicable execution horizon.
 
-distributable surplus.
+Its methodology is defined by the canonical economic specification and includes the approved asset perimeter, valuation mechanism, liquidation horizon, execution-cost assumptions and operational constraints.
 
-The Treasury may distribute only the amount remaining after the required higher-priority obligations are satisfied.
+EEV MUST NOT be replaced by arbitrary TVL, nominal wallet balance, global market depth or an unverified market-price assumption.
 
-Conceptually:
+6. Protected Capital
 
-DistributableSurplus =
-    VerifiedTreasuryValue
-  - CrystallisedLiabilities
-  - UnresolvedReserve
-  - RequiredPrizePoolSafetyCapital
-  - LockedJackpot
-  - RequiredReserveProtection
+ProtectedCapital =
+      CrystallizedLiabilities
+    + WorstCaseExposure
+    + SafetyCapital
+    + ReserveProtection
+    + LockedJackpot
+    + MandatoryFutureCosts
 
-with:
+For class i:
 
-DistributableSurplus >= 0
+ClassExposure_i =
+    ClassPrice_i × UnresolvedCount_i
 
-Any negative result means that no surplus distribution is permitted.
+and:
 
-5. PrizePool Funding
+WorstCaseExposure =
+    500 × Σ ClassExposure_i
 
-PrizePool funding is a protocol-controlled transition.
+subject to the canonical V3 definition of class state and exposure.
 
-Treasury funds sent to PrizePool must be sent to the configured PrizePool script.
+An aggregate unresolved reserve MAY be stored for efficiency or compatibility only if it is invariantly equal to the required class-aware exposure.
 
-The funding transaction must preserve:
+7. Effective Pool and Residual Surplus
 
-pending liabilities;
+The protected PrizePool calculation is conceptually:
 
-unresolved-ticket reserve;
+EffectivePool =
+    EEV
+    - CrystallizedLiabilities
+    - UnresolvedReserve
+    - LockedJackpot
 
-locked Jackpot accounting;
+The canonical residual surplus is:
 
-required safety capital;
+RawSurplus =
+    max(
+        0,
+        EEV - ProtectedCapital
+    )
 
-the distinction between economic obligations and free surplus.
+No Treasury operation may manufacture surplus by ignoring protected obligations.
 
-PrizePool funding must not be routed through an operator-controlled personal wallet.
+8. No Fixed 75/10/10/5 Economic Split
 
-6. Distribution Configuration
-
-The protocol may use governed percentages for distributable surplus.
-
-The proposed initial configuration is:
+The historical configuration:
 
 75% PrizePool
 10% Reserve
 10% Stake
  5% Maintenance
 
-These percentages apply to distributable surplus, not automatically to gross ticket revenue.
+is NOT a canonical V3 economic rule.
 
-They are configuration parameters subject to governance within the constitutional limits.
+It MUST NOT be presented as the current protocol allocation, required initial configuration, V3 default, invariant or governing economic parameter.
 
-They do not create personal ownership rights.
+It may remain in historical material solely as evidence of an earlier design.
 
-If governance changes them, the resulting configuration must remain compatible with:
+The V3 economy is liability-first and state-derived. It does not define distributable Treasury value by applying a fixed percentage split to gross revenue or residual surplus.
 
-economic safety;
+Any future allocation policy MUST be introduced through an explicit normative decision and MUST NOT silently modify the frozen economic model.
 
-PrizePool solvency;
+9. PrizePool Funding
 
-Reserve protection;
+Treasury funds sent to the PrizePool MUST be sent to the configured PrizePool script.
 
-Jackpot accounting;
+Funding MUST preserve the distinction between obligated capital, protected capital and free residual surplus.
 
-the prohibition on privileged beneficiaries.
+A Treasury-to-PrizePool transfer is valid only if the resulting protocol state remains inside the applicable solvency and viability conditions.
 
-7. Relayer Execution Reward
+10. Jackpot Interaction
 
-The relayer is an execution facilitator.
+The Jackpot is a distinct protected economic component.
 
-A relayer reward may exist as a governed protocol parameter.
+Locked Jackpot liquidity MUST be treated as committed capital and included in protected capital before any residual-surplus operation.
 
-The reward must:
+Jackpot funding is permitted only from legitimate residual surplus:
 
-be deterministic;
+NewJackpot <= RawSurplus
 
-be visible in the transaction;
+and the resulting state MUST satisfy the applicable Economic Gate / viability conditions.
 
-be bounded;
+There is no canonical fixed Jackpot funding percentage.
 
-not give the relayer control over economic outcomes;
+11. Reserve Protection
 
-not be treated as a team/founder allocation;
+Reserve is a protocol safety category. It is not personal capital and is not a discretionary accumulation pool.
 
-not override the liability-first priority.
+Required Reserve protection MUST be included before residual surplus is calculated.
 
-A relayer reward must be paid only from value that is legitimately available for the relevant operation.
+12. Mandatory Future Costs
 
-The relayer must not be able to choose:
+Mandatory future costs are protected obligations where recognized by the canonical economic model.
 
-winner;
+They MUST be included before residual surplus is calculated.
 
-tier;
+An arbitrary OPEX number MUST NOT be treated as a permanent economic constant unless explicitly adopted as a normative parameter.
 
-payout;
+13. Relayer Execution Reward
 
-Jackpot;
+A relayer is an execution facilitator.
 
-class activation;
+A relayer reward MAY exist only if explicitly defined by the applicable protocol rules. It MUST be deterministic, bounded, visible in the transaction, payable only from legitimately available value and incapable of changing the economic result.
 
-Reserve protection level.
+The relayer MUST NOT control winner selection, payout, class selection, activation, contraction, Jackpot level, Reserve protection or solvency conditions.
 
-The relayer may submit or execute the transaction. The validator determines whether the transition is valid.
+14. Distribution Trigger
 
-8. Distribution Trigger
+There is no automatic right to distribute Treasury value merely because a wallet contains funds.
 
-A distribution may be triggered only when the protocol's distribution conditions are satisfied.
+A distribution trigger MUST be derived from verified economic state. Any operational threshold is only a trigger/optimization and MUST NOT bypass the canonical economic gate.
 
-The trigger must be based on verified economic state, not on an arbitrary wallet balance observed by an operator.
-
-A threshold may be used as an operational optimization, but it must not bypass the liability-first rules.
-
-Conceptually:
-
-VerifiedAvailableSurplus >= DistributionThreshold
+VerifiedEconomicState
         ↓
-Distribution permitted
-
-The threshold itself must be denominated in USDM or verified USDM-equivalent value.
-
-9. Remainder and Rounding
-
-Distribution calculations must be deterministic.
-
-The protocol must define:
-
-integer units;
-
-asset precision;
-
-rounding direction;
-
-remainder assignment;
-
-minimum output value rules.
-
-Rounding must never create a hidden negative allocation or underfund a required protocol category.
-
-Any remainder after percentage calculations must be assigned by a deterministic rule and must not be sent to an arbitrary operator destination.
-
-10. Multi-Asset Treasury
-
-The Treasury may hold:
-
-USDM;
-
-ADA;
-
-other protocol-approved assets.
-
-When an economic decision depends on value rather than nominal quantity, the protocol must use the approved verified oracle mechanism.
-
-For example:
-
-ADA quantity
-    ↓
-verified ADA/USDM price
-    ↓
-USDM-equivalent Treasury value
-
-Stale, missing, unauthorized or inconsistent valuation data must cause the economic transition to fail when such data is required.
-
-The Treasury must not rely on a browser-side exchange rate.
-
-11. Jackpot Interaction
-
-The Treasury must treat locked Jackpot liquidity as economically committed capital.
-
-Therefore:
-
-LockedJackpotLiquidity
-
-must be accounted for before surplus is distributed.
-
-The Treasury must not distribute capital required to maintain an already funded Jackpot level.
-
-Jackpot funding itself must occur only after higher-priority liabilities and safety requirements have been satisfied.
-
-12. Reserve Interaction
-
-Reserve is a safety category, not a personal accumulation pool.
-
-Before distributable surplus is created, the protocol must protect the required Reserve level.
-
-When Reserve is below its required level:
-
-surplus distribution
+ProtectedCapital
         ↓
-restricted
+RawSurplus
+        ↓
+applicable Economic Gate
+        ↓
+permitted transition
 
-until the defined Reserve protection condition is satisfied.
+15. Deterministic Arithmetic
 
-Higher ticket classes may also be suspended when required safety capital is insufficient.
+All Treasury calculations MUST use deterministic integer arithmetic.
 
-13. Maintenance Interaction
+The protocol MUST define atomic units, asset precision, conversion precision, rounding direction, minimum output constraints and remainder handling.
 
-Maintenance is a protocol category.
+Rounding MUST NOT create hidden negative allocations, underfund liabilities, reduce safety capital, release protected capital or create value from nothing.
 
-It may fund legitimate protocol operation, including:
+16. Multi-Asset Treasury
 
-infrastructure;
+Multi-asset holdings are compatible with the canonical model only when their economic value can be deterministically established.
 
-indexing;
-
-monitoring;
-
-oracle-related infrastructure;
-
-transaction execution costs;
-
-other explicitly approved protocol expenses.
-
-Maintenance does not constitute a team salary, founder entitlement or developer share.
-
-A Maintenance balance is protocol-controlled.
-
-14. Treasury Thresholds and Ticket Class Activation
-
-Treasury distribution thresholds must not be confused with ticket-class activation thresholds.
-
-They serve different purposes:
-
-DistributionThreshold
+Quantity_A
     ↓
-determines when a surplus distribution may be operationally executed
-
-while:
-
-ClassActivation
+validated price_A/USDM
     ↓
-determines whether a ticket class is economically safe to sell
+USDM-equivalent value_A
 
-A Treasury distribution must never be used to bypass a class safety requirement.
+The valuation mechanism MUST specify asset identity, oracle source, timestamp validity, price selection, conversion direction, arithmetic and rounding.
 
-A class must become available only when its own economic conditions are satisfied.
+17. Atomicity
 
-15. Safety Invariant
+Treasury operations affecting economic state MUST be atomic with the corresponding state update.
 
-At every valid Treasury/PrizePool state:
+A valid transition MUST NOT permit Treasury value to decrease without the corresponding economic state update, or the economic state to claim a transfer that did not occur.
 
-CrystallisedLiabilities
-+ UnresolvedReserve
-+ RequiredPrizePoolSafetyCapital
-+ LockedJackpot
-+ RequiredReserveProtection
-≤ VerifiedProtocolEconomicValue
+18. Economic Gate
 
-The precise implementation may distribute value across several protocol-controlled components, but the aggregate economic invariant must remain true.
+Treasury operations consuming economically protected value MUST pass the applicable Economic Gate.
 
-16. Atomicity and Non-Discretion
+Where required by the canonical rule, the gate MUST be evaluated against the post-state:
 
-A Treasury transition must be rejected if:
+current state
+      ↓
+candidate transition
+      ↓
+post-state
+      ↓
+economic gate
+      ↓
+accept / reject
 
-the destination category is invalid;
+19. Governance Boundary
 
-the economic accounting does not balance;
+Governance may determine only parameters and policies explicitly left governable by the Constitution and economic specification.
 
-a required liability is omitted;
+Governance MUST NOT override a validator, authorize an otherwise invalid payout, bypass protected capital, rewrite unresolved exposure or release locked Jackpot value without satisfying the relevant rules.
 
-the Jackpot is double-counted;
+A governance change affecting frozen economic semantics is a new protocol-economic decision and MUST be versioned accordingly.
 
-an unauthorized destination receives protocol value;
+20. Historical Parameters and Legacy Code
 
-rounding violates the defined invariant;
+Historical Treasury percentage fields or implementations may remain temporarily during migration.
 
-the transition depends on an operator decision not represented in protocol rules.
+Their presence MUST NOT be interpreted as evidence that they are canonical V3 economics.
 
-A backend or relayer may construct and submit the transaction, but cannot define a different economic interpretation.
+In particular, legacy fields corresponding to:
 
-17. Legacy Dynamic Pricing
+tdPrizePct
+tdStakePct
+tdReservePct
+tdMaintenancePct
 
-The previous Treasury document contained a separate model in which ticket/ad prices changed according to hourly demand, floor, ceiling and step values.
+are migration debt when they encode the retired percentage-allocation model.
 
-That mechanism is not the PRE-RICH game ticket economic model.
+Migration must converge on the V3 economic state rather than preserve obsolete allocation semantics merely for compatibility.
 
-PRE-RICH game ticket pricing is defined by the constitutional class ladder:
+21. Conformance Requirements
 
-1 / 2 / 3 / 5 / 10 / 25 / 50 / 100 USDM
+Treasury conformance is established only when all relevant layers agree:
 
-with availability determined by economic safety.
+Normative economic rule
+        ↓
+Plutus datum / redeemer types
+        ↓
+Validator / policy enforcement
+        ↓
+Off-chain transaction construction
+        ↓
+Positive tests
+        ↓
+Negative / adversarial tests
+        ↓
+Reproducible evidence
 
-A separate commercial feature may use deterministic dynamic advertising pricing, provided it does not alter the game ticket economy.
+A documentation statement alone is insufficient.
 
-18. Ad-Slot Monetization
+A legacy implementation marked IMPLEMENTED in an older checklist is not proof of V3 conformance.
 
-Advertising is a separate protocol revenue source.
+22. Required V3 Treasury Invariants
 
-The advertising subsystem may use fixed packages such as:
+T1 — Liability priority: required liabilities are protected before residual surplus is available.
 
-1 hour;
+T2 — Unresolved exposure: all unresolved tickets contribute their canonical class-aware exposure.
 
-6 hours;
+T3 — Safety protection: Safety Capital and Reserve Protection cannot be silently distributed.
 
-1 day;
+T4 — Jackpot protection: locked Jackpot value is protected and cannot be double-counted as free surplus.
 
-3 days.
+T5 — Non-negative surplus:
 
-Advertising prices are commercial configuration and must not be confused with ticket-class economics.
+RawSurplus >= 0
 
-Where ad payments use ADA or another asset, the contract may require a minimum verified USDM-equivalent value.
+T6 — No fixed legacy split: the retired 75/10/10/5 model is not a V3 invariant.
 
-The ad subsystem must not be allowed to consume funds already reserved for player winnings or mandatory PrizePool safety.
+T7 — Deterministic valuation: required multi-asset valuation is verified and deterministic.
 
-19. Preprod Defaults
+T8 — Atomicity: Treasury value movement and economic state transition occur atomically.
 
-The following are operational defaults only and are not constitutional economic guarantees:
+T9 — No privileged beneficiary: no operator, founder or team wallet has discretionary economic allocation rights.
 
-Distribution trigger:
-    governed USDM-equivalent threshold
+T10 — Post-state safety: the resulting state must satisfy the applicable Economic Gate.
 
-Distribution base:
-    distributable surplus
+T11 — Relayer neutrality: relayer execution cannot determine the economic result.
 
-Initial surplus allocation proposal:
-    75% PrizePool
-    10% Reserve
-    10% Stake
-     5% Maintenance
+T12 — Governance boundary: governance cannot override protocol safety invariants.
 
-Relayer reward:
-    governed bounded parameter
+23. Migration Rule
 
-Any concrete numeric deployment configuration must be recorded in the applicable deployment/configuration documentation and tested against the constitutional invariants.
+During migration from the legacy Treasury implementation:
 
-20. Implementation Requirements
+identify all legacy percentage fields and percentage-based transitions;
 
-The Treasury implementation must support:
+identify all code paths depending on them;
 
-protocol-controlled destinations;
+replace their economic role with the V3 state-derived model;
 
-verified USDM-equivalent valuation when required;
+preserve historical information only where useful for auditability;
 
-liability-first accounting;
+add positive and negative conformance tests;
 
-deterministic allocation;
+remove obsolete economic semantics only after the replacement is verified.
 
-deterministic remainder handling;
+Migration MUST NOT be performed by merely changing percentage constants. It requires a state-model migration.
 
-bounded relayer reward;
+24. Current Status
 
-locked Jackpot protection;
+The V3 economic model is semantically consolidated.
 
-Reserve protection;
+The Treasury implementation is not yet considered V3-conformant solely because legacy Treasury code exists or because an older checklist marked Treasury functionality as implemented.
 
-no personal beneficiary path;
+The remaining implementation work is therefore a conformance problem, not an invitation to redesign the frozen economic model.
 
-safe failure when required economic data is invalid.
+The canonical sequence is:
 
-21. Verification Requirements
+V3 economic specification
+        ↓
+V3 economic state
+        ↓
+economic helpers
+        ↓
+class-aware exposure
+        ↓
+SALE / lifecycle enforcement
+        ↓
+Treasury migration
+        ↓
+Jackpot migration
+        ↓
+adversarial conformance tests
+        ↓
+open-source reference freeze
 
-Tests must cover at least:
+Until those implementation gates are satisfied, PRE-RICH MUST continue to distinguish:
 
-distribution below threshold;
+economic model = consolidated
+implementation = under conformance migration
 
-distribution at threshold;
-
-distribution above threshold;
-
-crystallised liability protection;
-
-unresolved reserve protection;
-
-PrizePool safety protection;
-
-Jackpot lock protection;
-
-Reserve protection;
-
-percentage accounting;
-
-remainder handling;
-
-oracle valuation;
-
-stale oracle rejection;
-
-unauthorized oracle rejection;
-
-unauthorized destination rejection;
-
-relayer reward bounds;
-
-no operator discretionary allocation.
-
-A Treasury implementation is not complete merely because the arithmetic balances in an off-chain model. The corresponding on-chain transition must enforce the same rules.
-
-22. Relationship with the Game Economy
-
-This document is subordinate to:
-
-docs/CONSTITUTION.md
-
-and must remain consistent with:
-
-docs/Game-Economy.md
-docs/Game-Economy-Specification.md
-docs/CONSTITUTION-GAP-MATRIX.md
-
-If a contradiction appears, the constitutional rule prevails and the affected specification must be corrected before code is changed.
+This distinction is normative and MUST be preserved in public project documentation.
