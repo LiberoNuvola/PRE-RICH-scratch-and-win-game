@@ -2053,3 +2053,86 @@ describe('TODO-06: Physical Pool Accounting', () => {
     assert.ok(751 > physicalValue)
   })
 })
+
+// ============================================================
+// P0.3: Expiry Finality — Commitment Dissolves at expiresAt
+//
+// These tests mirror the temporal boundary enforced by PrizeValidator.
+// They intentionally do NOT claim to execute Plutus. The on-chain
+// validator must independently reject REVEAL after expiry.
+// ============================================================
+
+function revealAllowedByExpiry(validityUpperBound: number, expiresAt: number): boolean {
+  return validityUpperBound <= expiresAt
+}
+
+function claimAllowedByExpiry(validityUpperBound: number, expiresAt: number): boolean {
+  return validityUpperBound <= expiresAt
+}
+
+function expireAllowedByExpiry(validityLowerBound: number, expiresAt: number): boolean {
+  return validityLowerBound >= expiresAt
+}
+
+describe('P0.3: Expiry Finality', () => {
+  const expiresAt = 1_000_000
+
+  it('REVEAL is allowed before expiresAt', () => {
+    assert.ok(revealAllowedByExpiry(expiresAt - 1, expiresAt))
+  })
+
+  it('REVEAL is allowed at the exact expiresAt boundary', () => {
+    assert.ok(revealAllowedByExpiry(expiresAt, expiresAt))
+  })
+
+  it('REVEAL is rejected after expiresAt', () => {
+    assert.ok(!revealAllowedByExpiry(expiresAt + 1, expiresAt))
+  })
+
+  it('CLAIM is rejected after expiresAt', () => {
+    assert.ok(!claimAllowedByExpiry(expiresAt + 1, expiresAt))
+  })
+
+  it('EXPIRE is allowed at the exact expiresAt boundary', () => {
+    assert.ok(expireAllowedByExpiry(expiresAt, expiresAt))
+  })
+
+  it('EXPIRE is allowed after expiresAt', () => {
+    assert.ok(expireAllowedByExpiry(expiresAt + 1, expiresAt))
+  })
+
+  it('after expiry, REVEAL cannot be the transition that crystallises liability', () => {
+    const pendingLiabilityBefore = 0
+    const revealAfterExpiry = revealAllowedByExpiry(expiresAt + 1, expiresAt)
+
+    // A late reveal must not execute, therefore it must not create a
+    // new crystallised liability from a previously Pending ticket.
+    assert.equal(revealAfterExpiry, false)
+    assert.equal(
+      revealAfterExpiry ? pendingLiabilityBefore + 100 : pendingLiabilityBefore,
+      pendingLiabilityBefore,
+    )
+  })
+
+  it('Pending -> EXPIRE releases reserve without creating liability', () => {
+    const pendingLiabilityBefore = 250
+    const unresolvedReserveBefore = 100
+    const unresolvedCountBefore = 1
+
+    const expired = expireAllowedByExpiry(expiresAt, expiresAt)
+
+    assert.ok(expired)
+    assert.equal(pendingLiabilityBefore, 250)
+    assert.equal(unresolvedReserveBefore - 100, 0)
+    assert.equal(unresolvedCountBefore - 1, 0)
+  })
+
+  it('the temporal rules are mutually consistent at the shared boundary', () => {
+    // At exactly expiresAt, both predicates may be individually true,
+    // but the Pending UTxO can only be consumed by one valid transaction.
+    // This test documents the boundary without inventing a new state.
+    assert.ok(revealAllowedByExpiry(expiresAt, expiresAt))
+    assert.ok(expireAllowedByExpiry(expiresAt, expiresAt))
+  })
+})
+

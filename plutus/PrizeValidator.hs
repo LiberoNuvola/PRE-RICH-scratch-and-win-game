@@ -388,7 +388,10 @@ validateSyncBeacon regHash datum ctx =
           && traceIfFalse "Prize: bad sync continuing" nextOk
 
 -- ============================================================
--- Reveal (allowed even after expiry — historical result)
+-- Reveal
+-- Economic finality: reveal is allowed only up to pdExpiresAt.
+-- After expiry the payment commitment dissolves and REVEAL
+-- must not create a new liability.
 -- ============================================================
 
 {-# INLINABLE validateReveal #-}
@@ -494,8 +497,10 @@ validateReveal table datum playerSecret ctx =
             && traceIfFalse "Prize: pool count wrong"
                  (ppUnresolvedTicketCount poolOut
                     == ppUnresolvedTicketCount poolIn - 1)
-  in
-       traceIfFalse "Prize: already revealed" (pdStatus datum == Pending)
+    in
+       traceIfFalse "Prize: reveal window closed"
+         (claimBeforeExpiry (pdExpiresAt datum) info)
+    && traceIfFalse "Prize: already revealed" (pdStatus datum == Pending)
     && traceIfFalse "Prize: beacon not ready" (pdBeaconStatus datum == BeaconReady)
     && traceIfFalse "Prize: empty beacon" (lengthOfByteString beaconValue > 0)
     && traceIfFalse "Prize: beacon rederive mismatch" (beaconValue == expectedR)

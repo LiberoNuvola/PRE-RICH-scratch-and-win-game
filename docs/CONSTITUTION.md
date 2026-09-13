@@ -56,6 +56,28 @@ Una specifica non può autorizzare una violazione della Costituzione.
 
 Un'implementazione non è conforme semplicemente perché è “simile” alla specifica: deve soddisfare gli invarianti richiesti.
 
+ARTICOLO 1A — OPEN DEVELOPMENT, FORK E CONFORMITÀ
+
+PRE-RICH è un protocollo open source. Il diritto di studiare, utilizzare, modificare, estendere e forkare l'implementazione non costituisce un'eccezione ai principi di apertura del protocollo.
+
+Un fork o un'implementazione derivata può modificare il codice liberamente nei limiti della licenza applicabile. Il fork, tuttavia, non acquisisce automaticamente lo status di implementazione PRE-RICH conforme.
+
+La conformità a PRE-RICH deriva dalla preservazione degli invarianti costituzionali e dal soddisfacimento delle specifiche e dei requisiti di conformance applicabili. La mera discendenza dal codice, dal repository o da una versione precedente non costituisce prova di conformità.
+
+Un'implementazione che modifica o viola un principio o un invariante costituzionale può continuare a esistere come progetto derivato o indipendente, ma non deve essere qualificata come implementazione PRE-RICH conforme sulla sola base della sua discendenza dal protocollo.
+
+Le estensioni compatibili che preservano gli invarianti fondamentali sono incoraggiate. Quando un cambiamento richiede una modifica degli invarianti costituzionali, esso appartiene all'evoluzione normativa del protocollo e non può essere presentato come semplice implementazione conforme senza il corrispondente aggiornamento della gerarchia normativa.
+
+La contribuzione upstream costituisce il percorso preferenziale per l'evoluzione condivisa di PRE-RICH, perché preserva continuità normativa, interoperabilità, verificabilità e coerenza dell'ecosistema. Tale preferenza non limita il diritto di creare fork o implementazioni indipendenti.
+
+La licenza del software disciplina i diritti sul codice. La Costituzione, le Specifiche e i relativi meccanismi di conformance definiscono invece i requisiti che determinano la conformità al protocollo. L'identità e i segni distintivi di PRE-RICH restano distinti dai diritti concessi sul software.
+
+Il principio fondamentale è:
+
+FORK LIBERO ≠ CONFORMITÀ AUTOMATICA
+
+CONTRIBUIRE UPSTREAM = PERCORSO PREFERENZIALE PER L'EVOLUZIONE DI PRE-RICH
+
 ARTICOLO 2 — PRINCIPIO DI TRUSTLESSNESS
 PRE-RICH non deve richiedere fiducia in un soggetto umano per determinare:
 
