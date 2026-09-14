@@ -15,8 +15,7 @@ import PlutusLedgerApi.V2.Contexts
 import PlutusTx
 import PlutusTx.Prelude hiding (Semigroup (..), unless)
 import qualified Economic
-import qualified EconomicKernel
-import B1LegacyAdapter ( legacyB1ToAggregateV3View )
+
 import Types
   ( B1PrizePoolDatum (..)
   , B1PrizePoolAction (..)
@@ -40,7 +39,10 @@ import Types
 {-# INLINABLE effectivePool #-}
 effectivePool :: B1PrizePoolDatum -> Integer
 effectivePool d =
-  EconomicKernel.effectivePool (ppTotalLiquidity d) (legacyB1ToAggregateV3View d)
+  ppTotalLiquidity d
+    - ppPendingLiabilities d
+    - ppUnresolvedReserve d
+    - ppLockedJackpot d
 
 -- | Worst-case payout exposure of all unresolved tickets.
 --
@@ -57,7 +59,7 @@ effectivePool d =
 {-# INLINABLE worstCaseExposure #-}
 worstCaseExposure :: B1PrizePoolDatum -> Integer
 worstCaseExposure d =
-  EconomicKernel.worstCaseExposure (legacyB1ToAggregateV3View d)
+  500 * ppUnresolvedReserve d
 
 -- | Deterministic worst-case solvency invariant.
 --
@@ -79,7 +81,15 @@ worstCaseExposure d =
 {-# INLINABLE solvencyInvariant #-}
 solvencyInvariant :: B1PrizePoolDatum -> Bool
 solvencyInvariant d =
-     EconomicKernel.solvencyInvariant (ppTotalLiquidity d) (legacyB1ToAggregateV3View d)
+     ppTotalLiquidity d >= 0
+  && ppPendingLiabilities d >= 0
+  && ppUnresolvedReserve d >= 0
+  && ppUnresolvedTicketCount d >= 0
+  && ppLockedJackpot d >= 0
+  && ppTotalLiquidity d
+       >= ppPendingLiabilities d
+          + worstCaseExposure d
+          + ppLockedJackpot d
 
 {-# INLINABLE jackpotActive #-}
 jackpotActive :: B1PrizePoolDatum -> Bool
@@ -772,7 +782,8 @@ mkValidator
                      -- Reserve increases by the exact
                      -- ticket economic price.
                      && ppUnresolvedReserve n
-                           == ppUnresolvedReserve datum + EconomicKernel.reserveIssueDelta priceUsdm
+                          == ppUnresolvedReserve datum + priceUsdm
+
                      -- G2:
                      -- The resulting state must remain solvent
                      -- even if every unresolved ticket later pays
@@ -857,11 +868,12 @@ mkValidator
                             == ppUnresolvedTicketCount datum - 1
 
                        && ppUnresolvedReserve n
-                             == ppUnresolvedReserve datum
-                                  + EconomicKernel.reserveRevealDelta reserveRelease
+                            == ppUnresolvedReserve datum
+                                 - reserveRelease
+
                        && ppPendingLiabilities n
-                            == ppPendingLiabilities datum
-                                 + EconomicKernel.liabilityRevealDelta payout
+                            == ppPendingLiabilities datum + payout
+
                        && solvencyInvariant n
 
         -- ==================================================
@@ -993,8 +1005,8 @@ mkValidator
                             == ppTotalLiquidity datum - claimedAmount
 
                        && ppPendingLiabilities n
-                             == ppPendingLiabilities datum
-                                  + EconomicKernel.liabilityClaimDelta claimedAmount
+                            == ppPendingLiabilities datum - claimedAmount
+
                        && solvencyInvariant n
 
         -- ==================================================
@@ -1070,7 +1082,8 @@ mkValidator
 
                        && ppUnresolvedReserve n
                             == ppUnresolvedReserve datum
-                                 + EconomicKernel.reserveExpiryDelta reservePerTicket
+                                 - reservePerTicket
+
                        && ppPendingLiabilities n
                             == ppPendingLiabilities datum
 

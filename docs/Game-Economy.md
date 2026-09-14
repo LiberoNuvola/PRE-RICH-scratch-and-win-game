@@ -228,7 +228,13 @@ Hysteresis
 
 Activation and suspension use separate thresholds to avoid oscillation.
 
-The economic principle is frozen, but exact numerical hysteresis thresholds are not claimed as frozen constants until explicitly adopted as implementation-policy parameters.
+The economic principle is frozen. Exact numerical hysteresis validation is an implementation/conformance matter, not a reopening of the semantic decision.
+
+The canonical kernel parameters are:
+
+KA = 8
+KC = 4
+KD = 4
 
 9. Treasury Distribution
 
@@ -284,7 +290,7 @@ Jackpot funding comes only from genuine residual surplus and must pass the Econo
 
 There is no fixed canonical JackpotAllocationRate.
 
-Any future allocation rate is a separate normative policy decision and must not be presented as already frozen.
+Any future allocation policy is a separate normative decision only if such a policy is actually required. Its future consideration must not be presented as a current fixed rule.
 
 10.3 Activation
 
@@ -382,7 +388,7 @@ a late historical reveal may preserve historical information;
 
 a late reveal must not create claimability or revive a dissolved economic right.
 
-The exact ticket lifetime duration is not claimed as a frozen constitutional constant in this baseline. The previously referenced 365-day value is not normative until explicitly adopted.
+The exact ticket lifetime duration remains an explicitly open policy parameter. No specific duration is normative until separately adopted.
 
 14. Secondary Market and Ticket Identity
 
@@ -566,4 +572,11 @@ An implementation gap does not reopen frozen economic parameters. A change to a 
 
 Economic baseline status: SEMANTICALLY CLOSED / NORMATIVE
 Implementation status: CONFORMANCE OPEN
-Open policy items retained explicitly: Jackpot payout amount policy, exact expiry duration, exact numerical activation/suspension hysteresis, and any future Jackpot allocation rate.
+
+Open policy decisions retained explicitly:
+
+1. Jackpot payout mode: threshold payout vs full current locked-balance payout.
+2. Exact ticket expiry duration.
+3. Future Jackpot allocation policy only if an allocation rule is actually required; no fixed JackpotAllocationRate is canonical by default.
+
+Hysteresis is semantically closed; remaining work is quantitative/implementation conformance.
