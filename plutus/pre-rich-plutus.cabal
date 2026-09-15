@@ -4,7 +4,11 @@ version:            0.1.0.0
 build-type:         Simple
 
 library
-    hs-source-dirs:     .
+    hs-source-dirs:
+        .
+        ../IMMORTAL/state
+        ../IMMORTAL/kernel
+
     exposed-modules:
         Types
         Beacon
@@ -16,13 +20,18 @@ library
         MintPolicy
         PrizeValidator
         Treasury
+        EconomicStateV3
+        EconomicKernel
+
     build-depends:
         base ^>=4.18.2,
         plutus-core ^>=1.67.0.0,
         plutus-ledger-api ^>=1.67.0.0,
         plutus-tx ^>=1.67.0.0,
         plutus-tx-plugin ^>=1.67.0.0
+
     default-language: Haskell2010
+
     ghc-options:
         -Wall
         -fno-strictness
@@ -32,9 +41,13 @@ library
         -fno-unbox-small-strict-fields
 
 executable export-scripts
-    hs-source-dirs:     .
+    hs-source-dirs:
+        .
+        ../IMMORTAL/state
+        ../IMMORTAL/kernel
+
     main-is:            Export.hs
-   
+
     build-depends:
         base ^>=4.18.2,
         plutus-core ^>=1.67.0.0,
@@ -45,8 +58,11 @@ executable export-scripts
         base16-bytestring,
         bytestring,
         directory,
-        text
+        text,
+        pre-rich-plutus
+
     default-language: Haskell2010
+
     ghc-options:
         -Wall
         -fno-strictness
@@ -58,7 +74,9 @@ executable export-scripts
 test-suite economic-oracle-tests
     type:               exitcode-stdio-1.0
     hs-source-dirs:     test
+
     main-is:            EconomicOracleTest.hs
+
     build-depends:
         base ^>=4.18.2,
         bytestring,
@@ -66,4 +84,5 @@ test-suite economic-oracle-tests
         plutus-ledger-api ^>=1.67.0.0,
         plutus-tx ^>=1.67.0.0,
         pre-rich-plutus
+
     default-language: Haskell2010
