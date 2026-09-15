@@ -6,7 +6,6 @@ This document specializes the generic IMMORTAL economic algorithm for Scratch & 
 
 At minimum the application transition logic reasons over:
 
-```text
 TotalLiquidity
 PendingWinningLiabilities
 UnresolvedTicketReserve
@@ -16,11 +15,9 @@ CurrentActiveClass
 HighestClassEverActivated
 SafetyParameters
 JackpotState
-```
 
 ## 2. Sale
 
-```text
 validate ticket class
 → validate exact application price
 → validate payment/conversion
@@ -33,40 +30,36 @@ validate ticket class
 → evaluate locked Jackpot protection
 → evaluate CurrentActiveClass
 → mint ticket + record payment + reserve exposure atomically
-```
+
 
 A valid sale must preserve the post-state economic invariants.
 
 ## 3. Solvency
 
-```text
 EffectivePool =
     TotalLiquidity
   - PendingWinningLiabilities
   - UnresolvedTicketReserve
   - LockedJackpotLiquidity
-```
 
-```text
+
 PendingWinningLiabilities
 + UnresolvedTicketReserve
 + LockedJackpotLiquidity
 <= TotalLiquidity
-```
 
-```text
+
 WorstCaseExposure(P,N) = 500 × P × N
-```
 
-```text
+
 RawSurplus = max(0, EEV − ProtectedCapital)
-```
+
 
 ## 4. Reserve and class control
 
-```text
+
 UnresolvedReserve(N) = N × μ + Z × σ × sqrt(N)
-```
+
 
 This is statistical risk capital, not deterministic worst-case protection.
 
@@ -74,17 +67,17 @@ This is statistical risk capital, not deterministic worst-case protection.
 
 Contraction:
 
-```text
+
 100 → 50 → 25 → 10 → 5 → 3 → 2 → 1 → HALT
-```
+
 
 Hysteresis is CLOSED at:
 
-```text
+
 KA = 8
 KC = 4
 KD = 4
-```
+
 
 ## 5. Commit
 
@@ -92,7 +85,7 @@ Commit binds the required ticket/game context and secret before the result can b
 
 ## 6. Reveal
 
-```text
+
 validate expiry boundary
 → validate commitment
 → validate active Beacon/evidence
@@ -102,7 +95,7 @@ validate expiry boundary
 → release unresolved exposure exactly once
 → create crystallized liability if winning
 → freeze result and payout
-```
+
 
 The player does not provide authoritative symbols, tier or payout.
 
@@ -112,49 +105,46 @@ Once crystallized, payout is immutable. Later liquidity, Treasury, PRE valuation
 
 ## 8. Claim
 
-```text
 verify ticket and ownership where required
 → verify revealed state
 → use frozen payout
 → settle exact economic value
 → reduce liability exactly once
 → prevent second claim
-```
 
-```text
+
 CLAIM ≠ BURN
-```
+
 
 ## 9. Expiry
 
 After expiry:
 
-```text
+
 newClaimability = false
 newLiability = false
 lateRevealEconomicEffect = none
-```
+
 
 The expired payment commitment dissolves. The unresolved reserve and expired right are released exactly once where applicable. OPEN-02 is only the exact ticket lifetime.
 
 ## 10. Settlement conversion
 
-```text
+
 verified asset identity
 → valid/fresh oracle
 → deterministic conversion
 → conservative rounding
 → exact USDM-equivalent settlement
-```
+
 
 The economic value of a crystallized prize cannot be reduced by changing settlement asset.
 
 ## 11. Jackpot
 
-```text
 NewJackpot <= RawSurplus
 JackpotPayout <= LockedJackpotLiquidity
-```
+
 
 Jackpot selection is cryptographically verifiable and non-discretionary. After payout, the paid amount becomes a normal pending liability and Jackpot liquidity is reduced exactly once. OPEN-01 controls payout mode.
 

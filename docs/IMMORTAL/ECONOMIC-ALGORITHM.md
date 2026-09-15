@@ -2,7 +2,6 @@
 
 ## Canonical sequence
 
-```text
 Truth
 ↓
 Canonical State
@@ -22,7 +21,7 @@ Policy
 Atomic Transition
 ↓
 State History
-```
+
 
 ## 1. Transition procedure
 
@@ -47,9 +46,7 @@ Any action that creates future economic obligation must account for it before ac
 
 Where used:
 
-```text
 secret → commitment → canonical binding → reveal → verification → deterministic derivation
-```
 
 A witness may prove a result; it must not simply assert the desired result.
 
@@ -61,9 +58,9 @@ Once an economic amount is crystallized under the applicable specification, late
 
 Claim settles an already established right once:
 
-```text
+
 verify right → settle once → reduce liability once
-```
+
 
 Claim does not intrinsically require destruction of a representation of the right.
 
@@ -71,11 +68,11 @@ Claim does not intrinsically require destruction of a representation of the righ
 
 After expiry:
 
-```text
+
 newClaimability = false
 newLiability = false
 lateRevealEconomicEffect = none
-```
+
 
 ## 7. Multi-asset value
 
@@ -83,10 +80,9 @@ Where an application settles in a different asset, conversion must be verified, 
 
 ## 8. Liveness
 
-```text
 Liveness mechanism ⊆ admissible execution paths
 Liveness mechanism ≠ economic authority
-```
+
 
 ## 9. Status
 
